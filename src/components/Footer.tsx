@@ -2,8 +2,8 @@ import Link from "next/link";
 
 export function Footer() {
   return (
-    <footer className="mt-20 border-t border-borderGrey bg-white">
-      <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-8 text-sm text-muted md:flex-row md:items-center md:justify-between">
+    <footer className="mt-20 border-t border-borderGrey bg-white dark:border-white/10 dark:bg-ink">
+      <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-8 text-sm text-muted md:flex-row md:items-center md:justify-between dark:text-white/60">
         <p>
           GNS — GenLayer Naming Service. Readable names for wallets, contracts, AI agents, and apps on GenLayer.
         </p>

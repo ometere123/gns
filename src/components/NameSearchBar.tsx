@@ -32,13 +32,13 @@ export function NameSearchBar({
 
   return (
     <form onSubmit={submit} className="w-full">
-      <div className="flex w-full overflow-hidden rounded-2xl border border-borderGrey bg-white shadow-sm focus-within:ring-2 focus-within:ring-primary/30">
+      <div className="flex w-full overflow-hidden rounded-2xl border border-borderGrey bg-white shadow-sm focus-within:ring-2 focus-within:ring-primary/30 dark:border-white/10 dark:bg-white/[0.03]">
         <input
           autoFocus
           value={value}
           onChange={(e) => setValue(e.target.value.toLowerCase())}
           placeholder="Search for a name"
-          className={`flex-1 bg-transparent px-5 text-ink placeholder:text-muted focus:outline-none ${
+          className={`flex-1 bg-transparent px-5 text-ink placeholder:text-muted focus:outline-none dark:text-white dark:placeholder:text-white/40 ${
             size === "lg" ? "h-14 text-lg" : "h-11 text-sm"
           }`}
         />

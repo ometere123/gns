@@ -9,7 +9,7 @@ export function Textarea({ label, hint, className, id, ...rest }: Props) {
   return (
     <div className="w-full">
       {label && (
-        <label htmlFor={inputId} className="mb-1.5 block text-sm font-medium text-ink">
+        <label htmlFor={inputId} className="mb-1.5 block text-sm font-medium text-ink dark:text-white">
           {label}
         </label>
       )}
@@ -17,7 +17,7 @@ export function Textarea({ label, hint, className, id, ...rest }: Props) {
         id={inputId}
         {...rest}
         className={classNames(
-          "min-h-[100px] w-full rounded-lg border border-borderGrey bg-white px-4 py-3 text-sm text-ink placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary/40",
+          "min-h-[100px] w-full rounded-lg border border-borderGrey bg-white px-4 py-3 text-sm text-ink placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary/40 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-white/40",
           className
         )}
       />

@@ -45,8 +45,10 @@ export function ConnectWalletButton({ compact = false }: { compact?: boolean }) 
     <div ref={rootRef} className="relative">
       <button
         onClick={() => setOpen((v) => !v)}
-        className={`inline-flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm font-medium hover:bg-section ${
-          wrongNetwork ? "border-red-300 text-red-700" : "border-borderGrey text-ink"
+        className={`inline-flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm font-medium hover:bg-section dark:bg-white/5 dark:hover:bg-white/10 ${
+          wrongNetwork
+            ? "border-red-300 text-red-700"
+            : "border-borderGrey text-ink dark:border-white/10 dark:text-white"
         }`}
       >
         <span className={`h-2 w-2 rounded-full ${wrongNetwork ? "bg-red-500" : "bg-emerald-500"}`} />
@@ -61,7 +63,7 @@ export function ConnectWalletButton({ compact = false }: { compact?: boolean }) 
       </button>
 
       {open && (
-        <div className="absolute right-0 z-40 mt-2 w-72 rounded-xl border border-borderGrey bg-white p-1 shadow-lg">
+        <div className="absolute right-0 z-40 mt-2 w-72 rounded-xl border border-borderGrey bg-white p-1 shadow-lg dark:border-white/10 dark:bg-ink dark:shadow-black/40">
           <div className="px-3 pt-3 pb-2">
             <p className="text-xs uppercase tracking-wide text-muted">Connected</p>
             <p className="mt-1 break-all font-mono text-sm text-ink">{address}</p>
@@ -117,8 +119,8 @@ function MenuItem({
   return (
     <button
       onClick={onClick}
-      className={`block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-section ${
-        destructive ? "text-red-600" : "text-ink"
+      className={`block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-section dark:hover:bg-white/5 ${
+        destructive ? "text-red-600" : "text-ink dark:text-white"
       }`}
     >
       {children}

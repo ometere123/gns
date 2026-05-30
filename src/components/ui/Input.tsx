@@ -9,7 +9,7 @@ export function Input({ label, hint, error, className, id, ...rest }: Props) {
   return (
     <div className="w-full">
       {label && (
-        <label htmlFor={inputId} className="mb-1.5 block text-sm font-medium text-ink">
+        <label htmlFor={inputId} className="mb-1.5 block text-sm font-medium text-ink dark:text-white">
           {label}
         </label>
       )}
@@ -17,8 +17,8 @@ export function Input({ label, hint, error, className, id, ...rest }: Props) {
         id={inputId}
         {...rest}
         className={classNames(
-          "h-11 w-full rounded-lg border bg-white px-4 text-sm text-ink placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary/40",
-          error ? "border-red-300" : "border-borderGrey",
+          "h-11 w-full rounded-lg border bg-white px-4 text-sm text-ink placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary/40 dark:bg-white/5 dark:text-white dark:placeholder:text-white/40",
+          error ? "border-red-300" : "border-borderGrey dark:border-white/10",
           className
         )}
       />

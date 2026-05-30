@@ -19,7 +19,7 @@ export function Card({
   return (
     <div
       className={classNames(
-        "rounded-2xl border border-borderGrey bg-white",
+        "rounded-2xl border border-borderGrey bg-white dark:border-white/10 dark:bg-white/[0.03]",
         pads[padding],
         className
       )}
