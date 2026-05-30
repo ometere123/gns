@@ -2,6 +2,7 @@
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
 
 from genlayer import *
+from datetime import datetime, timezone
 import json
 
 
@@ -9,7 +10,7 @@ ROOT_SUFFIX = ".gen"
 SECONDS_PER_YEAR = 31536000
 GEN_DECIMALS = 1000000000000000000
 DEFAULT_PRICE_PER_YEAR_WEI = 5 * GEN_DECIMALS
-CONTRACT_VERSION = "1.1.1-payable-address-string-fix"
+CONTRACT_VERSION = "1.1.2-payable-address-string-time-ai-fix"
 
 
 @gl.evm.contract_interface
@@ -106,10 +107,7 @@ class GNSRegistry(gl.Contract):
         return str(gl.message.sender_address).lower()
 
     def _now(self) -> int:
-        try:
-            return int(gl.block.timestamp)
-        except Exception:
-            return int(self.name_counter) + int(self.report_counter) + int(self.review_counter) + 1
+        return int(datetime.now(timezone.utc).timestamp())
 
     def _json_dump(self, data) -> str:
         return json.dumps(data, separators=(",", ":"))
@@ -672,8 +670,8 @@ class GNSRegistry(gl.Contract):
 
         obj = self._require_owner(full_name)
 
-        current_expiry = int(obj.get("expires_at", self._now()))
         now = self._now()
+        current_expiry = int(obj.get("expires_at", now))
 
         if current_expiry < now:
             current_expiry = now
@@ -991,7 +989,11 @@ Return ONLY valid JSON with this exact schema:
 """
         )
 
-        result = eq_principle.prompt_non_comparative(prompt)
+        result = gl.eq_principle.prompt_non_comparative(
+            lambda: prompt,
+            task="Review the supplied GNS name, claim, evidence URL, and context for identity, impersonation, phishing, and verification risk. Return only valid JSON matching the requested schema.",
+            criteria="The response must be valid JSON. It must include risk, verdict, verified, summary, reasons, and recommended_action. Risk must be one of low, medium, high, or critical. Verdict must match one of the allowed verdict values in the prompt. Do not include markdown or extra text."
+        )
         parsed = self._safe_ai_json(result)
 
         risk = str(parsed.get("risk", "medium"))
@@ -1066,7 +1068,11 @@ Return ONLY valid JSON with this exact schema:
 """
         )
 
-        result = eq_principle.prompt_non_comparative(prompt)
+        result = gl.eq_principle.prompt_non_comparative(
+            lambda: prompt,
+            task="Review the submitted GNS report and existing name data. Decide whether the report is valid, invalid, needs more evidence, or indicates impersonation/phishing risk. Return only valid JSON matching the requested schema.",
+            criteria="The response must be valid JSON. It must include risk, verdict, verified, summary, reasons, and recommended_report_status. Risk must be one of low, medium, high, or critical. recommended_report_status must be reviewed, flagged, or dismissed. Do not include markdown or extra text."
+        )
         parsed = self._safe_ai_json(result)
 
         risk = str(parsed.get("risk", "medium"))
@@ -1173,7 +1179,11 @@ Return ONLY valid JSON with this exact schema:
 """
         )
 
-        result = eq_principle.prompt_non_comparative(prompt)
+        result = gl.eq_principle.prompt_non_comparative(
+            lambda: prompt,
+            task="Review whether the user-owned GNS name legitimately represents the claimed project identity using the provided website, X, GitHub, and explanation. Return only valid JSON matching the requested schema.",
+            criteria="The response must be valid JSON. It must include risk, verdict, verified, summary, reasons, and recommended_action. Verdict must be verified, partially_verified, not_verified, or suspicious. Do not include markdown or extra text."
+        )
         parsed = self._safe_ai_json(result)
 
         risk = str(parsed.get("risk", "medium"))
@@ -1254,7 +1264,11 @@ Rules:
 """
         )
 
-        result = eq_principle.prompt_non_comparative(prompt)
+        result = gl.eq_principle.prompt_non_comparative(
+            lambda: prompt,
+            task="Suggest five safe, brandable .gen names based on the base label and purpose. Return only valid JSON matching the requested schema.",
+            criteria="The response must be valid JSON. It must include a suggestions array with exactly five objects. Each object must include name and reason. Every suggested name must end with .gen and use only lowercase letters, numbers, and hyphens. Do not include markdown or extra text."
+        )
         parsed = self._safe_ai_json(result)
 
         self.review_counter += u256(1)

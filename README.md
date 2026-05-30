@@ -40,7 +40,7 @@ Readable names for the intelligent contract economy. Register `.gen` names for w
 Copy `.env.example` to `.env.local` and edit if needed:
 
 ```
-NEXT_PUBLIC_GNS_CONTRACT_ADDRESS=0xfC5c1B1DAF6eFFc1B857E69832b3180894225395
+NEXT_PUBLIC_GNS_CONTRACT_ADDRESS=0xd8112F2612Ea2b4094970C33aCb02A17812B0676
 NEXT_PUBLIC_GENLAYER_RPC_URL=https://studio.genlayer.com/api
 NEXT_PUBLIC_CHAIN_NAME=studionet
 NEXT_PUBLIC_CHAIN_ID=61999

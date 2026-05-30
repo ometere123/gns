@@ -16,6 +16,8 @@ import { Textarea } from "@/components/ui/Textarea";
 import { useWallet } from "@/lib/wallet/WalletProvider";
 import type { GnsName, AiReview } from "@/lib/types";
 
+const RISK_PROMINENT = new Set(["high", "critical"]);
+
 export default function NamePage({ params }: { params: Promise<{ name: string }> }) {
   const { name } = use(params);
   const fullName = normaliseName(decodeURIComponent(name));
@@ -27,6 +29,8 @@ export default function NamePage({ params }: { params: Promise<{ name: string }>
   const [aiBusy, setAiBusy] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiReview, setAiReview] = useState<AiReview | null>(null);
+  const [showReviewDetails, setShowReviewDetails] = useState(false);
+  const [justRan, setJustRan] = useState(false);
   const [claim, setClaim] = useState("");
   const [evidence, setEvidence] = useState("");
   const [extra, setExtra] = useState("");
@@ -88,6 +92,7 @@ export default function NamePage({ params }: { params: Promise<{ name: string }>
     try {
       const review = await aiReviewName(fullName, claim, evidence, extra);
       setAiReview(review);
+      setJustRan(true);
     } catch (e) {
       setAiError(e instanceof Error ? e.message : "AI review failed.");
     } finally {
@@ -110,15 +115,22 @@ export default function NamePage({ params }: { params: Promise<{ name: string }>
       />
     );
 
+  const isFlagged = data.status === "flagged";
+  const risk = data.ai_status?.risk || "unreviewed";
+  const verified = data.ai_status?.verified === true;
+  const hasReview = Boolean(data.ai_status?.last_review_id);
+  const reviewIsProminent = isFlagged || RISK_PROMINENT.has(risk) || justRan;
+
   return (
     <div className="space-y-6">
       <Card padding="lg">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Badge tone={data.status === "flagged" ? "red" : data.status === "expired" ? "amber" : "green"}>
-                {data.status}
+                {data.status === "active" ? "Registered" : data.status}
               </Badge>
+              {verified && <Badge tone="blue">Verified</Badge>}
               {data.is_subname && (
                 <Badge tone="grey">
                   Subname of{" "}
@@ -145,9 +157,6 @@ export default function NamePage({ params }: { params: Promise<{ name: string }>
           <Row k="Created" v={formatExpiry(data.created_at)} />
           <Row k="Expires" v={formatExpiry(data.expires_at)} />
           <Row k="Records" v={String(Object.values(data.records || {}).filter(Boolean).length)} />
-          {data.ai_status && (
-            <Row k="AI Risk" v={data.ai_status.risk} />
-          )}
         </dl>
       </Card>
 
@@ -156,46 +165,92 @@ export default function NamePage({ params }: { params: Promise<{ name: string }>
         <RecordList records={data.records || {}} />
       </section>
 
-      <section className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold text-ink">AI-assisted review</h2>
-          <div className="flex gap-2">
-            <Button variant="secondary" size="sm" onClick={() => setAiOpen((v) => !v)}>
-              {aiOpen ? "Hide" : "Run AI Review"}
-            </Button>
-          </div>
-        </div>
-        {aiReview && <AiResultCard result={aiReview.result} title={`Review #${aiReview.id}`} />}
-        {aiOpen && (
+      {/* Prominent review surface — only when the name is flagged or risk is high/critical, or the owner just ran a review. */}
+      {reviewIsProminent && aiReview && (
+        <section className="space-y-3">
+          <h2 className="text-lg font-semibold text-ink">
+            {isFlagged ? "Trust alert" : "AI-assisted review"}
+          </h2>
+          <AiResultCard result={aiReview.result} title={`Review #${aiReview.id}`} />
+        </section>
+      )}
+
+      {/* Calm verification panel — the default state for ordinary names. */}
+      {!reviewIsProminent && (
+        <section>
           <Card padding="lg" className="space-y-3">
-            <p className="text-xs text-muted">
-              Submit an AI review for this name. AI-assisted, not official endorsement.
-            </p>
-            <Input
-              label="Claim"
-              value={claim}
-              onChange={(e) => setClaim(e.target.value)}
-              placeholder="e.g. This name represents the official Project X account."
-            />
-            <Input
-              label="Evidence URL"
-              value={evidence}
-              onChange={(e) => setEvidence(e.target.value)}
-              placeholder="https://…"
-            />
-            <Textarea
-              label="Extra context"
-              value={extra}
-              onChange={(e) => setExtra(e.target.value)}
-              placeholder="Anything else the reviewer should know."
-            />
-            <div className="flex items-center gap-3">
-              <Button onClick={runAiReview} loading={aiBusy}>Run AI Review</Button>
-              {aiError && <span className="text-sm text-red-600">{aiError}</span>}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-lg font-semibold text-ink">Verification</h2>
+              <Badge tone={verified ? "blue" : "grey"}>
+                {verified ? "Verified" : hasReview ? "Reviewed" : "Not requested"}
+              </Badge>
             </div>
+            <p className="text-sm text-muted">
+              {verified
+                ? "This name has an on-chain AI-assisted verification on record."
+                : hasReview
+                ? "An AI-assisted review exists for this name. View details below."
+                : "No official verification yet. You can request an AI-assisted review at any time."}
+            </p>
+            <p className="text-sm text-muted">
+              Trust:{" "}
+              <span className="text-ink">
+                {isFlagged ? "Flagged" : "No risk flags"}
+              </span>
+            </p>
+            <div className="flex flex-wrap gap-2 pt-1">
+              <Button size="sm" onClick={() => setAiOpen((v) => !v)}>
+                {aiOpen ? "Hide review form" : "Run AI Review"}
+              </Button>
+              {hasReview && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setShowReviewDetails((v) => !v)}
+                >
+                  {showReviewDetails ? "Hide review details" : "View review details"}
+                </Button>
+              )}
+            </div>
+            {showReviewDetails && aiReview && (
+              <div className="pt-2">
+                <AiResultCard result={aiReview.result} title={`Review #${aiReview.id}`} />
+              </div>
+            )}
           </Card>
-        )}
-      </section>
+        </section>
+      )}
+
+      {/* Run-AI-Review form — shared by both layouts when aiOpen toggled. */}
+      {aiOpen && (
+        <Card padding="lg" className="space-y-3">
+          <p className="text-xs text-muted">
+            Submit an AI-assisted review for this name. AI-assisted, not official endorsement.
+          </p>
+          <Input
+            label="Claim"
+            value={claim}
+            onChange={(e) => setClaim(e.target.value)}
+            placeholder="e.g. This name represents the official Project X account."
+          />
+          <Input
+            label="Evidence URL"
+            value={evidence}
+            onChange={(e) => setEvidence(e.target.value)}
+            placeholder="https://…"
+          />
+          <Textarea
+            label="Extra context"
+            value={extra}
+            onChange={(e) => setExtra(e.target.value)}
+            placeholder="Anything else the reviewer should know."
+          />
+          <div className="flex items-center gap-3">
+            <Button onClick={runAiReview} loading={aiBusy}>Run AI Review</Button>
+            {aiError && <span className="text-sm text-red-600">{aiError}</span>}
+          </div>
+        </Card>
+      )}
 
       {!data.is_subname && subnames.length > 0 && (
         <section>

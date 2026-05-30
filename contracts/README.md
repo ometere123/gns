@@ -2,7 +2,7 @@
 
 `GNSRegistry.py` is the source of truth for the GenLayer Naming Service.
 
-Deployed (Studionet): `0x141c3e53ae4Ad24B07405CC0fb4D12ccc3A3007A`
+Deployed (Studionet): `0x075A7986eC02c8cFE418aCbB08fc40B0Fdd5ebB8`
 
 See `../docs/deploy-genlayer.md` for the redeploy steps.
 
