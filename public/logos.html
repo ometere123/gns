@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>GNS — Logo concepts</title>
+    <style>
+      :root {
+        --bg: #ffffff;
+        --ink: #0b0f19;
+        --primary: #2563eb;
+        --primary-dark: #1d4ed8;
+        --soft: #eff6ff;
+        --border: #e5e7eb;
+        --muted: #6b7280;
+        --section: #f8fafc;
+      }
+      * { box-sizing: border-box; }
+      body {
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        background: var(--bg);
+        color: var(--ink);
+        margin: 0;
+        padding: 40px 24px 80px;
+        -webkit-font-smoothing: antialiased;
+      }
+      .wrap { max-width: 1100px; margin: 0 auto; }
+      h1 { margin: 0 0 6px; font-size: 28px; }
+      p.lede { color: var(--muted); margin: 0 0 32px; }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+        gap: 18px;
+      }
+      .card {
+        background: white;
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 18px;
+      }
+      .preview {
+        aspect-ratio: 1 / 1;
+        background: white;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        display: grid;
+        place-items: center;
+        margin-bottom: 12px;
+        overflow: hidden;
+      }
+      .preview.dark { background: var(--ink); border-color: var(--ink); }
+      .preview.soft { background: var(--soft); border-color: rgba(37,99,235,0.15); }
+      .name { font-weight: 600; margin-bottom: 2px; }
+      .desc { font-size: 12px; color: var(--muted); margin-bottom: 12px; }
+      .row { display: flex; gap: 8px; flex-wrap: wrap; }
+      button {
+        background: var(--primary);
+        color: white;
+        border: none;
+        padding: 8px 14px;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+      }
+      button:hover { background: var(--primary-dark); }
+      button.ghost {
+        background: white;
+        color: var(--primary);
+        border: 1px solid rgba(37,99,235,0.3);
+      }
+      button.ghost:hover { background: var(--soft); }
+      .bgs { display: flex; gap: 6px; }
+      .bgs button { padding: 4px 10px; font-size: 12px; }
+      svg { display: block; }
+      .wordmark { display: flex; align-items: center; gap: 10px; }
+      .wordmark .label {
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        font-weight: 700;
+        font-size: 28px;
+        letter-spacing: -0.02em;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>GNS — Logo concepts</h1>
+      <p class="lede">Pick one. Click <b>Download PNG</b> to export at 1024×1024 with a transparent background.</p>
+      <div id="grid" class="grid"></div>
+    </div>
+
+    <script>
+      // Each logo: id, name, description, svg builder (size -> svg string)
+      const logos = [
+        {
+          id: "rounded-g",
+          name: "Rounded G",
+          desc: "Same G-square in the navbar. Soft, friendly, clean.",
+          svg: (s) => `
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${s} ${s}" width="${s}" height="${s}">
+              <rect x="${s*0.12}" y="${s*0.12}" width="${s*0.76}" height="${s*0.76}" rx="${s*0.22}" fill="#2563EB"/>
+              <text x="50%" y="54%" text-anchor="middle" dominant-baseline="middle"
+                font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
+                font-weight="700" font-size="${s*0.48}" fill="white">G</text>
+              <circle cx="${s*0.74}" cy="${s*0.74}" r="${s*0.045}" fill="white"/>
+            </svg>`
+        },
+        {
+          id: "dot-mark",
+          name: "G·",
+          desc: "Letter G with the .gen dot as a halo. Reads as identity + namespace.",
+          svg: (s) => `
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${s} ${s}" width="${s}" height="${s}">
+              <defs>
+                <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#3B82F6"/>
+                  <stop offset="1" stop-color="#1D4ED8"/>
+                </linearGradient>
+              </defs>
+              <circle cx="${s/2}" cy="${s/2}" r="${s*0.42}" fill="none" stroke="url(#g1)" stroke-width="${s*0.07}"/>
+              <text x="50%" y="54%" text-anchor="middle" dominant-baseline="middle"
+                font-family="ui-sans-serif, system-ui, sans-serif"
+                font-weight="700" font-size="${s*0.42}" fill="#0B0F19">G</text>
+              <circle cx="${s*0.78}" cy="${s*0.78}" r="${s*0.07}" fill="#2563EB"/>
+            </svg>`
+        },
+        {
+          id: "node",
+          name: "Resolver node",
+          desc: "Hex node with linked dots — protocol/resolver vibe.",
+          svg: (s) => {
+            const cx = s/2, cy = s/2, R = s*0.32;
+            const pts = [];
+            for (let i = 0; i < 6; i++) {
+              const a = (Math.PI/3)*i - Math.PI/2;
+              pts.push(`${cx + R*Math.cos(a)},${cy + R*Math.sin(a)}`);
+            }
+            const small = [];
+            for (let i = 0; i < 6; i++) {
+              const a = (Math.PI/3)*i - Math.PI/2;
+              const r = s*0.43;
+              small.push([cx + r*Math.cos(a), cy + r*Math.sin(a)]);
+            }
+            return `
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${s} ${s}" width="${s}" height="${s}">
+              ${small.map(([x,y]) => `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="#2563EB" stroke-width="${s*0.012}" opacity="0.35"/>`).join("")}
+              <polygon points="${pts.join(" ")}" fill="#2563EB"/>
+              <text x="50%" y="55%" text-anchor="middle" dominant-baseline="middle"
+                font-family="ui-sans-serif, system-ui, sans-serif"
+                font-weight="700" font-size="${s*0.28}" fill="white">G</text>
+              ${small.map(([x,y]) => `<circle cx="${x}" cy="${y}" r="${s*0.022}" fill="#2563EB"/>`).join("")}
+            </svg>`;
+          }
+        },
+        {
+          id: "arrow",
+          name: "Resolver arrow",
+          desc: "G with a forward arrow → suggests 'resolves to'.",
+          svg: (s) => `
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${s} ${s}" width="${s}" height="${s}">
+              <rect x="${s*0.08}" y="${s*0.22}" width="${s*0.84}" height="${s*0.56}" rx="${s*0.18}" fill="#2563EB"/>
+              <text x="${s*0.30}" y="55%" text-anchor="middle" dominant-baseline="middle"
+                font-family="ui-sans-serif, system-ui, sans-serif"
+                font-weight="700" font-size="${s*0.40}" fill="white">G</text>
+              <path d="M ${s*0.46} ${s*0.50} L ${s*0.72} ${s*0.50} M ${s*0.62} ${s*0.40} L ${s*0.72} ${s*0.50} L ${s*0.62} ${s*0.60}"
+                stroke="white" stroke-width="${s*0.05}" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+              <circle cx="${s*0.83}" cy="${s*0.50}" r="${s*0.045}" fill="white"/>
+            </svg>`
+        },
+        {
+          id: "monogram",
+          name: "GNS monogram",
+          desc: "Stacked GNS initials, all-blue mark.",
+          svg: (s) => `
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${s} ${s}" width="${s}" height="${s}">
+              <rect x="${s*0.08}" y="${s*0.08}" width="${s*0.84}" height="${s*0.84}" rx="${s*0.20}" fill="#0B0F19"/>
+              <text x="50%" y="50%" text-anchor="middle" dominant-baseline="middle"
+                font-family="ui-sans-serif, system-ui, sans-serif"
+                font-weight="800" font-size="${s*0.32}" fill="#2563EB" letter-spacing="-2">GNS</text>
+              <circle cx="${s*0.73}" cy="${s*0.74}" r="${s*0.04}" fill="white"/>
+            </svg>`
+        },
+        {
+          id: "wordmark",
+          name: "GNS wordmark",
+          desc: "Horizontal lockup: G mark + 'GNS.' Ideal for headers.",
+          svg: (s) => `
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${s*2.6} ${s}" width="${s*2.6}" height="${s}">
+              <rect x="${s*0.10}" y="${s*0.18}" width="${s*0.64}" height="${s*0.64}" rx="${s*0.18}" fill="#2563EB"/>
+              <text x="${s*0.42}" y="55%" text-anchor="middle" dominant-baseline="middle"
+                font-family="ui-sans-serif, system-ui, sans-serif"
+                font-weight="700" font-size="${s*0.38}" fill="white">G</text>
+              <text x="${s*0.92}" y="55%" dominant-baseline="middle"
+                font-family="ui-sans-serif, system-ui, sans-serif"
+                font-weight="700" font-size="${s*0.40}" fill="#0B0F19" letter-spacing="-1">GNS</text>
+              <circle cx="${s*1.92}" cy="${s*0.66}" r="${s*0.05}" fill="#2563EB"/>
+            </svg>`
+        },
+      ];
+
+      const grid = document.getElementById("grid");
+
+      function makeCard(logo) {
+        const card = document.createElement("div");
+        card.className = "card";
+        const preview = document.createElement("div");
+        preview.className = "preview";
+        preview.innerHTML = logo.svg(220);
+
+        const name = document.createElement("div");
+        name.className = "name";
+        name.textContent = logo.name;
+
+        const desc = document.createElement("div");
+        desc.className = "desc";
+        desc.textContent = logo.desc;
+
+        const bgs = document.createElement("div");
+        bgs.className = "bgs";
+        const bgWhite = document.createElement("button");
+        bgWhite.className = "ghost";
+        bgWhite.textContent = "White";
+        const bgSoft = document.createElement("button");
+        bgSoft.className = "ghost";
+        bgSoft.textContent = "Soft blue";
+        const bgDark = document.createElement("button");
+        bgDark.className = "ghost";
+        bgDark.textContent = "Dark";
+        bgWhite.onclick = () => (preview.className = "preview");
+        bgSoft.onclick = () => (preview.className = "preview soft");
+        bgDark.onclick = () => (preview.className = "preview dark");
+        bgs.append(bgWhite, bgSoft, bgDark);
+
+        const row = document.createElement("div");
+        row.className = "row";
+        row.style.marginTop = "10px";
+        const dl = document.createElement("button");
+        dl.textContent = "Download PNG (1024)";
+        dl.onclick = () => downloadPng(logo, 1024);
+        const dlSmall = document.createElement("button");
+        dlSmall.className = "ghost";
+        dlSmall.textContent = "PNG 512";
+        dlSmall.onclick = () => downloadPng(logo, 512);
+        const dlSvg = document.createElement("button");
+        dlSvg.className = "ghost";
+        dlSvg.textContent = "SVG";
+        dlSvg.onclick = () => downloadSvg(logo);
+        row.append(dl, dlSmall, dlSvg);
+
+        card.append(preview, name, desc, bgs, row);
+        return card;
+      }
+
+      function svgString(logo, size) {
+        return logo.svg(size).trim();
+      }
+
+      function downloadSvg(logo) {
+        const blob = new Blob([svgString(logo, 1024)], { type: "image/svg+xml" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `gns-${logo.id}.svg`;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+
+      function downloadPng(logo, size) {
+        const svg = svgString(logo, size);
+        const img = new Image();
+        const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          // Wordmark is wider — keep its aspect
+          const isWide = logo.id === "wordmark";
+          canvas.width = isWide ? size * 2.6 : size;
+          canvas.height = size;
+          const ctx = canvas.getContext("2d");
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          canvas.toBlob((blob) => {
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.download = `gns-${logo.id}-${size}.png`;
+            a.click();
+            URL.revokeObjectURL(a.href);
+            URL.revokeObjectURL(url);
+          }, "image/png");
+        };
+        img.src = url;
+      }
+
+      logos.forEach((l) => grid.append(makeCard(l)));
+    </script>
+  </body>
+</html>

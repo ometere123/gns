@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { ConnectWalletButton } from "./ConnectWalletButton";
 
 const NAV = [
@@ -14,7 +15,7 @@ export function Navbar() {
     <header className="sticky top-0 z-30 border-b border-borderGrey bg-white/90 backdrop-blur">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4">
         <Link href="/" className="flex items-center gap-2">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-white text-sm font-bold">G</span>
+          <Image src="/gns-logo.png" alt="GNS" width={32} height={32} priority className="h-8 w-8 rounded-lg object-contain" />
           <span className="text-lg font-semibold text-ink">
             GNS<span className="text-primary">.</span>
           </span>
