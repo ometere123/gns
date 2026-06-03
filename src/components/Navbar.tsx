@@ -18,7 +18,7 @@ export function Navbar() {
   return (
     <header className="sticky top-0 z-30 border-b border-borderGrey bg-white/90 backdrop-blur dark:border-white/10 dark:bg-ink/80">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4">
-        <Link href="/" className="flex items-center" onClick={() => setOpen(false)}>
+        <Link href="/" className="flex items-center gap-3" onClick={() => setOpen(false)}>
           <Image
             src="/gns-logo.png"
             alt="GNS"
@@ -27,6 +27,9 @@ export function Navbar() {
             priority
             className="h-10 w-auto object-contain"
           />
+          <span className="hidden md:block text-sm font-semibold text-ink dark:text-white tracking-tight">
+            GenLayer Naming Service
+          </span>
         </Link>
 
         <nav className="hidden items-center gap-1 md:flex">
