@@ -4,7 +4,7 @@ import { Badge } from "@/components/Badge";
 const FAQ = [
   {
     q: "What is GNS?",
-    a: "GNS is the GenLayer Naming Service — a protocol-level naming layer for the GenLayer ecosystem. It maps human-readable .gen names to wallets, contracts, AI agents, and project records.",
+    a: "GNS is the GenLayer Naming Service, a protocol-level naming layer for the GenLayer ecosystem. It maps human-readable .gen names to wallets, contracts, AI agents, and project records.",
   },
   {
     q: "What is a .gen name?",

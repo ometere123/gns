@@ -112,11 +112,11 @@ export default function RegisterPage({ params }: { params: Promise<{ name: strin
         <>
           <Card padding="lg" className="space-y-5">
             <div>
-              <p className="text-xs uppercase tracking-wide text-muted">Step 1 — Name</p>
+              <p className="text-xs uppercase tracking-wide text-muted">Step 1: Name</p>
               <p className="mt-1 text-lg font-semibold text-ink">{fullName}</p>
             </div>
             <div>
-              <p className="text-xs uppercase tracking-wide text-muted">Step 2 — Duration</p>
+              <p className="text-xs uppercase tracking-wide text-muted">Step 2: Duration</p>
               <div className="mt-2 flex gap-2">
                 {DURATIONS.map((y) => (
                   <button
@@ -135,7 +135,7 @@ export default function RegisterPage({ params }: { params: Promise<{ name: strin
               </div>
             </div>
             <div>
-              <p className="text-xs uppercase tracking-wide text-muted">Step 3 — Primary Address</p>
+              <p className="text-xs uppercase tracking-wide text-muted">Step 3: Primary Address</p>
               <div className="mt-2">
                 <Input
                   value={primary}
@@ -145,7 +145,7 @@ export default function RegisterPage({ params }: { params: Promise<{ name: strin
               </div>
             </div>
             <div className="rounded-xl bg-section p-4 text-sm">
-              <p className="text-xs uppercase tracking-wide text-muted">Step 4 — Summary</p>
+              <p className="text-xs uppercase tracking-wide text-muted">Step 4: Summary</p>
               <ul className="mt-2 space-y-1 text-ink">
                 <li>Name: <b>{fullName}</b></li>
                 <li>Duration: <b>{years} year{years > 1 ? "s" : ""}</b></li>

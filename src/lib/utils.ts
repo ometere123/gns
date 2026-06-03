@@ -36,12 +36,12 @@ export function truncateAddress(address: string | undefined, head = 6, tail = 4)
 }
 
 export function formatExpiry(timestamp: number): string {
-  if (!timestamp) return "—";
+  if (!timestamp) return "-";
   try {
     const d = new Date(timestamp * 1000);
     return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
   } catch {
-    return "—";
+    return "-";
   }
 }
 

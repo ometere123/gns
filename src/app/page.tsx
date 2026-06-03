@@ -106,7 +106,7 @@ export default function HomePage() {
             Future AI protection layer
           </h2>
           <p className="mt-2 max-w-2xl text-sm text-muted">
-            Impersonation detection, dispute review, and brand protection — powered by
+            Impersonation detection, dispute review, and brand protection, powered by
             GenLayer Equivalence-Principle prompts. MVP ships deterministic. The AI
             review layer is architected and ready to switch on.
           </p>

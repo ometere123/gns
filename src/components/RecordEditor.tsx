@@ -53,7 +53,7 @@ export function RecordEditor({ fullName, initialRecords, initialPrimaryAddress, 
     <Card padding="lg" className="space-y-5">
       {!isOwner && (
         <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-          Read-only view — connect the owner wallet to edit.
+          Read-only view. Connect the owner wallet to edit.
         </p>
       )}
       <Input
