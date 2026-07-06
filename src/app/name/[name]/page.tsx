@@ -11,6 +11,7 @@ import { LoadingState, ErrorState, EmptyState } from "@/components/States";
 import { resolveName, getSubnames, aiReviewName, getAiReview } from "@/lib/gns/contract";
 import { formatExpiry, normaliseName } from "@/lib/utils";
 import { AiResultCard } from "@/components/AiResultCard";
+import { SoulStampVerification } from "@/components/SoulStampVerification";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { useWallet } from "@/lib/wallet/WalletProvider";
@@ -164,6 +165,8 @@ export default function NamePage({ params }: { params: Promise<{ name: string }>
         <h2 className="mb-3 text-lg font-semibold text-ink">Records</h2>
         <RecordList records={data.records || {}} />
       </section>
+
+      <SoulStampVerification owner={data.owner} records={data.records || {}} />
 
       {/* Prominent review surface — only when the name is flagged or risk is high/critical, or the owner just ran a review. */}
       {reviewIsProminent && aiReview && (

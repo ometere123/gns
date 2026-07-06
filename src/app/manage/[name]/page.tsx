@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/Input";
 import { RecordEditor } from "@/components/RecordEditor";
 import { LoadingState, ErrorState } from "@/components/States";
 import { VerifyProjectClaim } from "@/components/VerifyProjectClaim";
+import { SoulStampVerification } from "@/components/SoulStampVerification";
 import { useWallet } from "@/lib/wallet/WalletProvider";
 import { resolveName, renewName, transferName, setPrimaryName, quoteRenewal, weiToGen } from "@/lib/gns/contract";
 import { normaliseName, formatExpiry } from "@/lib/utils";
@@ -120,6 +121,8 @@ export default function ManagePage({ params }: { params: Promise<{ name: string 
         initialPrimaryAddress={data.primary_address}
         isOwner={isOwner}
       />
+
+      <SoulStampVerification owner={data.owner} records={data.records || {}} />
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Card padding="lg">

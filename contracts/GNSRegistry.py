@@ -4,13 +4,14 @@
 from genlayer import *
 from datetime import datetime, timezone
 import json
+import hashlib
 
 
 ROOT_SUFFIX = ".gen"
 SECONDS_PER_YEAR = 31536000
 GEN_DECIMALS = 1000000000000000000
 DEFAULT_PRICE_PER_YEAR_WEI = 5 * GEN_DECIMALS
-CONTRACT_VERSION = "1.1.2-payable-address-string-time-ai-fix"
+CONTRACT_VERSION = "1.3.0-web-evidence"
 
 
 @gl.evm.contract_interface
@@ -57,10 +58,12 @@ class GNSRegistry(gl.Contract):
     parent_subnames: TreeMap[str, str]
     reports: TreeMap[str, str]
     ai_reviews: TreeMap[str, str]
+    web_evidence: TreeMap[str, str]
 
     name_counter: u256
     report_counter: u256
     review_counter: u256
+    evidence_counter: u256
 
     price_per_year_wei: u256
     total_protocol_revenue: u256
@@ -76,10 +79,12 @@ class GNSRegistry(gl.Contract):
         self.parent_subnames = TreeMap()
         self.reports = TreeMap()
         self.ai_reviews = TreeMap()
+        self.web_evidence = TreeMap()
 
         self.name_counter = u256(0)
         self.report_counter = u256(0)
         self.review_counter = u256(0)
+        self.evidence_counter = u256(0)
 
         self.price_per_year_wei = u256(DEFAULT_PRICE_PER_YEAR_WEI)
         self.total_protocol_revenue = u256(0)
@@ -248,22 +253,22 @@ class GNSRegistry(gl.Contract):
 
     def _clean_address(self, address: str, label: str) -> str:
         if address is None:
-            raise Exception(label + " is required")
+            raise gl.vm.UserError(label + " is required")
 
         clean = str(address).strip().lower()
 
         if clean == "":
-            raise Exception(label + " is required")
+            raise gl.vm.UserError(label + " is required")
 
         if not clean.startswith("0x") or len(clean) != 42:
-            raise Exception("Invalid " + label.lower())
+            raise gl.vm.UserError("Invalid " + label.lower())
 
         allowed = "0123456789abcdef"
         body = clean[2:]
 
         for ch in body:
             if ch not in allowed:
-                raise Exception("Invalid " + label.lower())
+                raise gl.vm.UserError("Invalid " + label.lower())
 
         return clean
 
@@ -323,7 +328,7 @@ class GNSRegistry(gl.Contract):
         obj = self._get_name_obj(full_name)
 
         if obj is None:
-            raise Exception("Name does not exist")
+            raise gl.vm.UserError("Name does not exist")
 
         return obj
 
@@ -331,13 +336,13 @@ class GNSRegistry(gl.Contract):
         obj = self._require_existing_name(full_name)
 
         if obj.get("owner", "").lower() != self._sender():
-            raise Exception("Only the name owner can perform this action")
+            raise gl.vm.UserError("Only the name owner can perform this action")
 
         return obj
 
     def _require_admin(self) -> None:
         if str(gl.message.sender_address).lower() != self.admin.lower():
-            raise Exception("Only admin can perform this action")
+            raise gl.vm.UserError("Only admin can perform this action")
 
     def _record_value_ok(self, value: str) -> bool:
         if value is None:
@@ -397,6 +402,14 @@ class GNSRegistry(gl.Contract):
 
         return False
 
+    def _is_fetchable_url(self, url: str) -> bool:
+        clean = str(url).strip().lower()
+        return clean.startswith("https://") and len(clean) <= 300
+
+    def _exec_prompt_json(self, prompt: str) -> str:
+        res = gl.nondet.exec_prompt(prompt)
+        return res.replace("```json", "").replace("```", "").strip()
+
     def _safe_ai_json(self, raw: str):
         try:
             return json.loads(raw)
@@ -428,14 +441,14 @@ class GNSRegistry(gl.Contract):
     @gl.public.view
     def quote_registration(self, years: u256) -> u256:
         if years < u256(1) or years > u256(5):
-            raise Exception("Duration must be between 1 and 5 years")
+            raise gl.vm.UserError("Duration must be between 1 and 5 years")
 
         return self._quote_years(years)
 
     @gl.public.view
     def quote_renewal(self, years: u256) -> u256:
         if years < u256(1) or years > u256(5):
-            raise Exception("Duration must be between 1 and 5 years")
+            raise gl.vm.UserError("Duration must be between 1 and 5 years")
 
         return self._quote_years(years)
 
@@ -567,6 +580,14 @@ class GNSRegistry(gl.Contract):
         return self.review_counter
 
     @gl.public.view
+    def get_total_evidence(self) -> u256:
+        return self.evidence_counter
+
+    @gl.public.view
+    def get_web_evidence(self, evidence_id: str) -> str:
+        return self.web_evidence.get(evidence_id, "{}")
+
+    @gl.public.view
     def get_name_status(self, label_or_name: str) -> str:
         full_name = self._normalise_full_name(label_or_name)
         obj = self._get_name_obj(full_name)
@@ -598,19 +619,19 @@ class GNSRegistry(gl.Contract):
         clean_label = self._strip_root_suffix(label)
 
         if not self._is_valid_root_label(clean_label):
-            raise Exception("Invalid name label")
+            raise gl.vm.UserError("Invalid name label")
 
         if years < u256(1) or years > u256(5):
-            raise Exception("Registration duration must be between 1 and 5 years")
+            raise gl.vm.UserError("Registration duration must be between 1 and 5 years")
 
         if primary_address.strip() == "":
-            raise Exception("Primary address is required")
+            raise gl.vm.UserError("Primary address is required")
 
         required_payment = self._quote_years(years)
         amount_paid = gl.message.value
 
         if amount_paid < required_payment:
-            raise Exception("Insufficient GEN sent for registration")
+            raise gl.vm.UserError("Insufficient GEN sent for registration")
 
         full_name = clean_label + ROOT_SUFFIX
 
@@ -618,7 +639,7 @@ class GNSRegistry(gl.Contract):
         if existing_raw != "":
             existing_obj = json.loads(existing_raw)
             if not self._is_expired_obj(existing_obj):
-                raise Exception("Name is not available")
+                raise gl.vm.UserError("Name is not available")
 
         owner = self._sender()
         now = self._now()
@@ -660,13 +681,13 @@ class GNSRegistry(gl.Contract):
         full_name = self._normalise_full_name(label_or_name)
 
         if years < u256(1) or years > u256(5):
-            raise Exception("Renewal duration must be between 1 and 5 years")
+            raise gl.vm.UserError("Renewal duration must be between 1 and 5 years")
 
         required_payment = self._quote_years(years)
         amount_paid = gl.message.value
 
         if amount_paid < required_payment:
-            raise Exception("Insufficient GEN sent for renewal")
+            raise gl.vm.UserError("Insufficient GEN sent for renewal")
 
         obj = self._require_owner(full_name)
 
@@ -701,7 +722,7 @@ class GNSRegistry(gl.Contract):
         full_name = self._normalise_full_name(label_or_name)
 
         if new_owner.strip() == "":
-            raise Exception("New owner is required")
+            raise gl.vm.UserError("New owner is required")
 
         obj = self._require_owner(full_name)
 
@@ -721,7 +742,7 @@ class GNSRegistry(gl.Contract):
         full_name = self._normalise_full_name(label_or_name)
 
         if address.strip() == "":
-            raise Exception("Address is required")
+            raise gl.vm.UserError("Address is required")
 
         obj = self._require_owner(full_name)
 
@@ -763,12 +784,12 @@ class GNSRegistry(gl.Contract):
 
         for key in incoming:
             if not self._allowed_record_key(key):
-                raise Exception("Unsupported record key: " + key)
+                raise gl.vm.UserError("Unsupported record key: " + key)
 
             value = str(incoming[key])
 
             if not self._record_value_ok(value):
-                raise Exception("Record value is too long")
+                raise gl.vm.UserError("Record value is too long")
 
             records[key] = value
 
@@ -784,7 +805,7 @@ class GNSRegistry(gl.Contract):
         obj = self._require_owner(full_name)
 
         if not self._allowed_record_key(key):
-            raise Exception("Unsupported record key")
+            raise gl.vm.UserError("Unsupported record key")
 
         records = obj.get("records", self._empty_records())
         records[key] = ""
@@ -805,21 +826,21 @@ class GNSRegistry(gl.Contract):
         clean_sub = sub_label.strip().lower()
 
         if not self._is_valid_sub_label(clean_sub):
-            raise Exception("Invalid subname label")
+            raise gl.vm.UserError("Invalid subname label")
 
         if primary_address.strip() == "":
-            raise Exception("Primary address is required")
+            raise gl.vm.UserError("Primary address is required")
 
         parent_obj = self._require_owner(parent)
 
         if self._is_expired_obj(parent_obj):
-            raise Exception("Parent name is expired")
+            raise gl.vm.UserError("Parent name is expired")
 
         full_subname = clean_sub + "." + parent
 
         existing_raw = self.names.get(full_subname, "")
         if existing_raw != "":
-            raise Exception("Subname already exists")
+            raise gl.vm.UserError("Subname already exists")
 
         owner = self._sender()
         now = self._now()
@@ -850,12 +871,12 @@ class GNSRegistry(gl.Contract):
         full_name = self._normalise_full_name(subname)
 
         if new_owner.strip() == "":
-            raise Exception("New owner is required")
+            raise gl.vm.UserError("New owner is required")
 
         obj = self._require_owner(full_name)
 
         if not obj.get("is_subname", False):
-            raise Exception("This method is only for subnames")
+            raise gl.vm.UserError("This method is only for subnames")
 
         old_owner = obj.get("owner", "").lower()
         clean_new_owner = new_owner.strip().lower()
@@ -883,16 +904,16 @@ class GNSRegistry(gl.Contract):
         full_name = self._normalise_full_name(label_or_name)
 
         if reason.strip() == "":
-            raise Exception("Report reason is required")
+            raise gl.vm.UserError("Report reason is required")
 
         if len(reason) > 80:
-            raise Exception("Reason is too long")
+            raise gl.vm.UserError("Reason is too long")
 
         if len(evidence_url) > 300:
-            raise Exception("Evidence URL is too long")
+            raise gl.vm.UserError("Evidence URL is too long")
 
         if len(comment) > 700:
-            raise Exception("Comment is too long")
+            raise gl.vm.UserError("Comment is too long")
 
         self.report_counter += u256(1)
         report_id = str(int(self.report_counter))
@@ -921,12 +942,12 @@ class GNSRegistry(gl.Contract):
         self._require_admin()
 
         if not self._valid_report_status(status):
-            raise Exception("Invalid report status")
+            raise gl.vm.UserError("Invalid report status")
 
         raw = self.reports.get(report_id, "")
 
         if raw == "":
-            raise Exception("Report does not exist")
+            raise gl.vm.UserError("Report does not exist")
 
         report = json.loads(raw)
         report["status"] = status
@@ -934,9 +955,76 @@ class GNSRegistry(gl.Contract):
         self.reports[report_id] = self._json_dump(report)
 
         return self._success("Report status updated", report)
+    @gl.public.write
+    def verify_name_url(self, label_or_name: str, evidence_type: str, url: str) -> str:
+        full_name = self._normalise_full_name(label_or_name)
+        obj = self._require_owner(full_name)
+
+        clean_type = str(evidence_type).strip().lower()
+        clean_url = str(url).strip()
+
+        allowed_types = ["website", "github", "x", "agent", "evidence"]
+        found_type = False
+        for item in allowed_types:
+            if clean_type == item:
+                found_type = True
+
+        if not found_type:
+            raise gl.vm.UserError("Unsupported evidence type")
+
+        if not self._is_fetchable_url(clean_url):
+            raise gl.vm.UserError("Evidence URL must be an https URL up to 300 chars")
+
+        def fetch_task() -> str:
+            result = {"ok": False, "sha256": "", "bytes": 0, "error": ""}
+            try:
+                response = gl.nondet.web.request(clean_url, method="GET")
+                body = response.body
+                result["sha256"] = hashlib.sha256(body).hexdigest()
+                result["bytes"] = len(body)
+                result["ok"] = True
+            except Exception as e:
+                result["error"] = str(e)
+            return json.dumps(result, sort_keys=True, separators=(",", ":"))
+
+        fetch_result_raw = gl.eq_principle.strict_eq(fetch_task)
+        fetch_result = json.loads(fetch_result_raw)
+
+        self.evidence_counter += u256(1)
+        evidence_id = str(int(self.evidence_counter))
+        status = "VERIFIED" if bool(fetch_result.get("ok", False)) else "FAILED_FETCH"
+
+        evidence = {
+            "id": evidence_id,
+            "name": full_name,
+            "evidence_type": clean_type,
+            "url": clean_url,
+            "status": status,
+            "sha256": str(fetch_result.get("sha256", "")),
+            "bytes": int(fetch_result.get("bytes", 0)),
+            "error": str(fetch_result.get("error", "")),
+            "verified": status == "VERIFIED",
+            "verified_at": self._now(),
+            "consensus_method": "strict_eq_web_request",
+            "requested_by": self._sender(),
+        }
+
+        self.web_evidence[evidence_id] = self._json_dump(evidence)
+
+        existing = obj.get("web_evidence", [])
+        existing.append(evidence_id)
+        obj["web_evidence"] = existing
+        self._save_name_obj(full_name, obj)
+
+        return self._success("URL evidence fetched by validators", evidence)
+
 
     # -------------------------------------------------------------------------
     # AI / Intelligent review methods
+    #
+    # High-stakes identity, verification, and dispute decisions use
+    # prompt_comparative so validators independently judge the verdict-bearing
+    # fields. Non-mutating creative suggestions may remain non-comparative.
     # -------------------------------------------------------------------------
 
     @gl.public.write
@@ -950,13 +1038,13 @@ class GNSRegistry(gl.Contract):
         full_name = self._normalise_full_name(label_or_name)
 
         if len(claim) > 700:
-            raise Exception("Claim is too long")
+            raise gl.vm.UserError("Claim is too long")
 
         if len(evidence_url) > 300:
-            raise Exception("Evidence URL is too long")
+            raise gl.vm.UserError("Evidence URL is too long")
 
         if len(extra_context) > 1200:
-            raise Exception("Extra context is too long")
+            raise gl.vm.UserError("Extra context is too long")
 
         obj = self._get_name_obj(full_name)
 
@@ -989,10 +1077,9 @@ Return ONLY valid JSON with this exact schema:
 """
         )
 
-        result = gl.eq_principle.prompt_non_comparative(
-            lambda: prompt,
-            task="Review the supplied GNS name, claim, evidence URL, and context for identity, impersonation, phishing, and verification risk. Return only valid JSON matching the requested schema.",
-            criteria="The response must be valid JSON. It must include risk, verdict, verified, summary, reasons, and recommended_action. Risk must be one of low, medium, high, or critical. Verdict must match one of the allowed verdict values in the prompt. Do not include markdown or extra text."
+        result = gl.eq_principle.prompt_comparative(
+            lambda: self._exec_prompt_json(prompt),
+            "Independently review the supplied GNS name, claim, evidence URL, and context for identity, impersonation, phishing, and verification risk. Validators must agree on risk, verdict, verified, and recommended_action, not only JSON shape. Return only valid JSON with risk, verdict, verified, summary, reasons, and recommended_action."
         )
         parsed = self._safe_ai_json(result)
 
@@ -1009,6 +1096,7 @@ Return ONLY valid JSON with this exact schema:
             "id": review_id,
             "name": full_name,
             "reviewer": "genlayer-ai",
+            "consensus_method": "prompt_comparative",
             "requested_by": self._sender(),
             "claim": claim,
             "evidence_url": evidence_url,
@@ -1038,7 +1126,7 @@ Return ONLY valid JSON with this exact schema:
         raw = self.reports.get(report_id, "")
 
         if raw == "":
-            raise Exception("Report does not exist")
+            raise gl.vm.UserError("Report does not exist")
 
         report = json.loads(raw)
         full_name = report.get("name", "")
@@ -1068,10 +1156,9 @@ Return ONLY valid JSON with this exact schema:
 """
         )
 
-        result = gl.eq_principle.prompt_non_comparative(
-            lambda: prompt,
-            task="Review the submitted GNS report and existing name data. Decide whether the report is valid, invalid, needs more evidence, or indicates impersonation/phishing risk. Return only valid JSON matching the requested schema.",
-            criteria="The response must be valid JSON. It must include risk, verdict, verified, summary, reasons, and recommended_report_status. Risk must be one of low, medium, high, or critical. recommended_report_status must be reviewed, flagged, or dismissed. Do not include markdown or extra text."
+        result = gl.eq_principle.prompt_comparative(
+            lambda: self._exec_prompt_json(prompt),
+            "Independently review the submitted GNS report and existing name data. Validators must agree on risk, verdict, verified, and recommended_report_status before any report or name status is updated. Return only valid JSON with risk, verdict, verified, summary, reasons, and recommended_report_status."
         )
         parsed = self._safe_ai_json(result)
 
@@ -1094,6 +1181,7 @@ Return ONLY valid JSON with this exact schema:
             "name": full_name,
             "report_id": report_id,
             "reviewer": "genlayer-ai",
+            "consensus_method": "prompt_comparative",
             "requested_by": self._sender(),
             "result": parsed,
             "created_at": self._now(),
@@ -1136,19 +1224,19 @@ Return ONLY valid JSON with this exact schema:
         obj = self._require_owner(full_name)
 
         if len(project_name) > 100:
-            raise Exception("Project name is too long")
+            raise gl.vm.UserError("Project name is too long")
 
         if len(official_website) > 300:
-            raise Exception("Website URL is too long")
+            raise gl.vm.UserError("Website URL is too long")
 
         if len(official_x) > 120:
-            raise Exception("X handle is too long")
+            raise gl.vm.UserError("X handle is too long")
 
         if len(official_github) > 300:
-            raise Exception("GitHub URL is too long")
+            raise gl.vm.UserError("GitHub URL is too long")
 
         if len(explanation) > 1000:
-            raise Exception("Explanation is too long")
+            raise gl.vm.UserError("Explanation is too long")
 
         prompt = (
             "You are reviewing a project identity claim for GNS, the GenLayer Naming Service.\n\n"
@@ -1179,10 +1267,9 @@ Return ONLY valid JSON with this exact schema:
 """
         )
 
-        result = gl.eq_principle.prompt_non_comparative(
-            lambda: prompt,
-            task="Review whether the user-owned GNS name legitimately represents the claimed project identity using the provided website, X, GitHub, and explanation. Return only valid JSON matching the requested schema.",
-            criteria="The response must be valid JSON. It must include risk, verdict, verified, summary, reasons, and recommended_action. Verdict must be verified, partially_verified, not_verified, or suspicious. Do not include markdown or extra text."
+        result = gl.eq_principle.prompt_comparative(
+            lambda: self._exec_prompt_json(prompt),
+            "Independently review whether the user-owned GNS name legitimately represents the claimed project identity using the provided website, X, GitHub, and explanation. Validators must agree on risk, verdict, verified, and recommended_action, not only JSON shape. Return only valid JSON with risk, verdict, verified, summary, reasons, and recommended_action."
         )
         parsed = self._safe_ai_json(result)
 
@@ -1199,6 +1286,7 @@ Return ONLY valid JSON with this exact schema:
             "id": review_id,
             "name": full_name,
             "reviewer": "genlayer-ai",
+            "consensus_method": "prompt_comparative",
             "requested_by": self._sender(),
             "project_name": project_name,
             "official_website": official_website,
@@ -1229,13 +1317,13 @@ Return ONLY valid JSON with this exact schema:
         clean_label = base_label.strip().lower()
 
         if len(clean_label) < 2:
-            raise Exception("Base label is too short")
+            raise gl.vm.UserError("Base label is too short")
 
         if len(clean_label) > 32:
-            raise Exception("Base label is too long")
+            raise gl.vm.UserError("Base label is too long")
 
         if len(purpose) > 500:
-            raise Exception("Purpose is too long")
+            raise gl.vm.UserError("Purpose is too long")
 
         prompt = (
             "You are suggesting names for GNS, the GenLayer Naming Service.\n\n"
@@ -1265,9 +1353,9 @@ Rules:
         )
 
         result = gl.eq_principle.prompt_non_comparative(
-            lambda: prompt,
-            task="Suggest five safe, brandable .gen names based on the base label and purpose. Return only valid JSON matching the requested schema.",
-            criteria="The response must be valid JSON. It must include a suggestions array with exactly five objects. Each object must include name and reason. Every suggested name must end with .gen and use only lowercase letters, numbers, and hyphens. Do not include markdown or extra text."
+            lambda: self._exec_prompt_json(prompt),
+            "Suggest five safe, brandable .gen names based on the base label and purpose. Return only valid JSON matching the requested schema.",
+            "The response must be valid JSON. It must include a suggestions array with exactly five objects. Each object must include name and reason. Every suggested name must end with .gen and use only lowercase letters, numbers, and hyphens. Do not include markdown or extra text."
         )
         parsed = self._safe_ai_json(result)
 
@@ -1279,6 +1367,7 @@ Rules:
             "type": "name_suggestions",
             "base_label": clean_label,
             "purpose": purpose,
+            "consensus_method": "prompt_non_comparative_advisory",
             "requested_by": self._sender(),
             "result": parsed,
             "created_at": self._now(),
@@ -1296,10 +1385,15 @@ Rules:
     def admin_set_price_per_year(self, new_price_wei: u256) -> str:
         self._require_admin()
 
-        if new_price_wei <= u256(0):
-            raise Exception("Price must be greater than zero")
+        try:
+            price_u256 = u256(int(str(new_price_wei).strip()))
+        except Exception:
+            raise gl.vm.UserError("Price must be a whole number in wei")
 
-        self.price_per_year_wei = new_price_wei
+        if price_u256 <= u256(0):
+            raise gl.vm.UserError("Price must be greater than zero")
+
+        self.price_per_year_wei = price_u256
 
         return self._success("Price per year updated", {
             "price_per_year_wei": str(int(self.price_per_year_wei)),
@@ -1320,21 +1414,32 @@ Rules:
     def admin_withdraw(self, amount: u256) -> str:
         self._require_admin()
 
-        if amount <= u256(0):
-            raise Exception("Withdrawal amount must be greater than zero")
+        try:
+            amount_u256 = u256(int(str(amount).strip()))
+        except Exception:
+            raise gl.vm.UserError("Withdrawal amount must be a whole number in wei")
 
-        if amount > self.balance:
-            raise Exception("Insufficient contract balance")
+        try:
+            balance_u256 = u256(int(str(self.balance).strip()))
+        except Exception:
+            raise gl.vm.UserError("Could not read contract balance")
 
-        _TreasuryRecipient(self.treasury).emit_transfer(value=amount)
+        if amount_u256 <= u256(0):
+            raise gl.vm.UserError("Withdrawal amount must be greater than zero")
 
-        self.total_withdrawn = self.total_withdrawn + amount
+        if amount_u256 > balance_u256:
+            raise gl.vm.UserError("Insufficient contract balance")
+
+        _TreasuryRecipient(Address(self.treasury)).emit_transfer(value=amount_u256)
+
+        self.total_withdrawn = self.total_withdrawn + amount_u256
+        remaining_balance_wei = int(balance_u256) - int(amount_u256)
 
         return self._success("Treasury withdrawal emitted", {
             "treasury": str(self.treasury).lower(),
-            "amount_wei": str(int(amount)),
+            "amount_wei": str(int(amount_u256)),
             "total_withdrawn_wei": str(int(self.total_withdrawn)),
-            "remaining_balance_wei": str(int(self.balance - amount)),
+            "remaining_balance_wei": str(remaining_balance_wei),
         })
 
     # -------------------------------------------------------------------------
@@ -1346,12 +1451,12 @@ Rules:
         self._require_admin()
 
         if not self._valid_report_status(status):
-            raise Exception("Invalid report status")
+            raise gl.vm.UserError("Invalid report status")
 
         raw = self.reports.get(report_id, "")
 
         if raw == "":
-            raise Exception("Report does not exist")
+            raise gl.vm.UserError("Report does not exist")
 
         report = json.loads(raw)
         report["status"] = status
@@ -1368,7 +1473,7 @@ Rules:
         obj = self._require_existing_name(full_name)
 
         if len(reason) > 500:
-            raise Exception("Reason is too long")
+            raise gl.vm.UserError("Reason is too long")
 
         obj["status"] = "flagged"
         obj["admin_flag_reason"] = reason

@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "keys:gns": "node scripts/generate-gns-keys.mjs",
+    "deploy:gns": "node scripts/deploy-gns.mjs",
+    "smoke:gns": "node scripts/smoke-gns.mjs"
   },
   "dependencies": {
     "genlayer-js": "1.1.7",

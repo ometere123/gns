@@ -89,6 +89,7 @@ export type AiReview = {
   name?: string;
   report_id?: string;
   reviewer: string;
+  consensus_method?: "prompt_comparative" | "prompt_non_comparative_advisory";
   requested_by: string;
   result: AiResult;
   created_at: number;
@@ -106,3 +107,38 @@ export type AiReview = {
 };
 
 export type AiSuggestion = { name: string; reason: string };
+
+export type SoulStampPlatform = "github" | "twitter" | "discord";
+
+export type SoulStampLinkedAccount = {
+  platform: SoulStampPlatform;
+  username: string;
+  profile_url?: string;
+  verified_at?: number;
+  confidence_score?: number;
+  bot_score?: number;
+  reasoning?: string;
+  proof_status?: "ACTIVE" | "STALE" | "REVOKED" | "CONFLICTED" | "FLAGGED" | string;
+  proof_strength?: string;
+  risk_band?: string;
+};
+
+export type SoulStampIdentity = {
+  found: boolean;
+  owner: string;
+  linked_accounts: SoulStampLinkedAccount[];
+  reputation_score?: number;
+  is_flagged?: boolean;
+  flag_reason?: string;
+  verification_count?: number;
+};
+
+export type SoulStampMatch = {
+  platform: SoulStampPlatform;
+  label: string;
+  expected: string;
+  account?: SoulStampLinkedAccount;
+  matched: boolean;
+  status: "verified" | "missing" | "inactive" | "flagged" | "unconfigured" | "error";
+  message: string;
+};
