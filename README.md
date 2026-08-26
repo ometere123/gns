@@ -173,6 +173,8 @@ See [`docs/arc-usdc.md`](docs/arc-usdc.md) and [`docs/deploy-genlayer.md`](docs/
 
 Historical v2 registry/authenticity addresses are not v3 proof. A fresh deployment is mandatory because the new registry constructor binds the Arc router and the registration lifecycle now includes a GenLayer reservation plus Arc receipt verification.
 
+For this testnet release, an unconsumed Arc payment has no permissionless refund or recovery path if later GenLayer registration fails permanently; production hardening must address that explicitly. Redirect behavior of `gl.nondet.web.request` remains an independent pre-production runtime-audit item.
+
 ## Branch policy
 
 - `v2-authenticity-adjudication` preserves the audited authenticity-recovery baseline.

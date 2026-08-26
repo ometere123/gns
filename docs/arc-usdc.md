@@ -190,6 +190,12 @@ Treasury handover:
 
 Arc admin transfer is also two-step. GenLayer registry admin transfer is separate and two-step. None of these roles can manufacture an authenticity verdict.
 
+## Testnet limitations and runtime notes
+
+The router currently has no permissionless refund or recovery path for an unconsumed payment. If an Arc payment succeeds but GenLayer registration later fails permanently, the USDC can remain held by the router treasury. This is accepted for this testnet release and requires a production hardening decision such as escrow, an expiry/refund claim or a payment-intent settlement flow.
+
+The authenticity source-binding implementation authorizes the requested URL before reading its response. Redirect behavior for `gl.nondet.web.request` has not been independently established in this environment, so no redirect-trampoline guarantee is claimed; a controlled runtime redirect test remains a pre-production audit item.
+
 ## 11. Authenticity lifecycle
 
 After a fresh namespace is registered under a controlled wallet:
