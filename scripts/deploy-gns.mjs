@@ -21,7 +21,12 @@ console.log(`Deploying GNSRegistry with ${deployer.address}`);
 console.log(`Binding immutable Arc payment router ${arcRouter}`);
 const tx = await client.deployContract({ account: deployer, code, args: [arcRouter] });
 const receipt = await waitFinalized(client, tx, "GNSRegistry deploy");
-const address = findAddressDeep(receipt) || findAddressDeep(tx);
+const canonicalAddress =
+  receipt?.data?.contract_address ||
+  receipt?.data?.contractAddress ||
+  receipt?.contractAddress ||
+  "";
+const address = canonicalAddress || findAddressDeep(receipt) || findAddressDeep(tx);
 
 if (!address) {
   console.log(JSON.stringify({ tx, receipt }, null, 2));

@@ -302,12 +302,14 @@ class GNSRegistry(gl.Contract):
             ARC_RPC_URL,
             method="POST",
             headers={"content-type": "application/json"},
-            body={
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": method,
-                "params": params,
-            },
+            body=json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": method,
+                    "params": params,
+                }
+            ),
         )
         status_code = int(
             getattr(response, "status_code", getattr(response, "status", 0))
