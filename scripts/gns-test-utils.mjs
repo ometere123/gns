@@ -28,7 +28,7 @@ export function loadTestEnv() {
 
 export function requireEnv(name) {
   const value = process.env[name];
-  if (!value) throw new Error(`Missing ${name}. Check ${TEST_ENV}`);
+  if (!value) throw new Error(`Missing ${name}. Check ${TEST_ENV} or ${LOCAL_ENV}`);
   return value;
 }
 
@@ -40,18 +40,25 @@ export function makeClient(account) {
   return createClient({ chain: studionet, account });
 }
 
-export async function waitAccepted(client, tx, label) {
+async function waitForStatus(client, tx, label, status, retries) {
   const hash = typeof tx === "string" ? tx : tx?.hash;
   if (!hash) return tx;
   console.log(`${label}: ${hash}`);
   if (typeof client.waitForTransactionReceipt !== "function") return tx;
-  const receipt = await client.waitForTransactionReceipt({
+  return client.waitForTransactionReceipt({
     hash,
-    status: "ACCEPTED",
-    retries: 80,
+    status,
+    retries,
     interval: 3000,
   });
-  return receipt;
+}
+
+export async function waitAccepted(client, tx, label) {
+  return waitForStatus(client, tx, label, "ACCEPTED", 80);
+}
+
+export async function waitFinalized(client, tx, label) {
+  return waitForStatus(client, tx, label, "FINALIZED", 160);
 }
 
 export function findAddressDeep(value) {
@@ -76,15 +83,24 @@ export function findAddressDeep(value) {
   return "";
 }
 
-export function updateLocalContractAddress(address) {
+function updateLocalEnvValue(key, value) {
   let raw = fs.existsSync(LOCAL_ENV) ? fs.readFileSync(LOCAL_ENV, "utf8") : "";
-  const line = `NEXT_PUBLIC_GNS_CONTRACT_ADDRESS=${address}`;
-  if (/^NEXT_PUBLIC_GNS_CONTRACT_ADDRESS=.*$/m.test(raw)) {
-    raw = raw.replace(/^NEXT_PUBLIC_GNS_CONTRACT_ADDRESS=.*$/m, line);
+  const line = `${key}=${value}`;
+  const re = new RegExp(`^${key}=.*$`, "m");
+  if (re.test(raw)) {
+    raw = raw.replace(re, line);
   } else {
     raw += `${raw.endsWith("\n") || raw.length === 0 ? "" : "\n"}${line}\n`;
   }
   fs.writeFileSync(LOCAL_ENV, raw);
+}
+
+export function updateLocalContractAddress(address) {
+  updateLocalEnvValue("NEXT_PUBLIC_GNS_CONTRACT_ADDRESS", address);
+}
+
+export function updateLocalAuthenticityAddress(address) {
+  updateLocalEnvValue("NEXT_PUBLIC_GNS_AUTHENTICITY_CONTRACT_ADDRESS", address);
 }
 
 export function genToWei(gen) {
