@@ -40,17 +40,47 @@ export function makeClient(account) {
   return createClient({ chain: studionet, account });
 }
 
+function executionResultName(receipt) {
+  if (!receipt || typeof receipt !== "object") return "";
+  return String(
+    receipt.txExecutionResultName ??
+      receipt.tx_execution_result_name ??
+      receipt.executionResultName ??
+      receipt.execution_result_name ??
+      ""
+  ).toUpperCase();
+}
+
+export function assertSuccessfulExecution(receipt, label = "transaction") {
+  const result = executionResultName(receipt);
+  if (!result) {
+    throw new Error(
+      `${label} reached its requested status but the receipt did not expose an execution result. Refusing to report success without FINISHED_WITH_RETURN.`
+    );
+  }
+  if (result !== "FINISHED_WITH_RETURN" && result !== "SUCCESS") {
+    throw new Error(`${label} execution failed: ${result}`);
+  }
+  return receipt;
+}
+
 async function waitForStatus(client, tx, label, status, retries) {
   const hash = typeof tx === "string" ? tx : tx?.hash;
-  if (!hash) return tx;
+  if (!hash) throw new Error(`${label} did not return a transaction hash`);
   console.log(`${label}: ${hash}`);
-  if (typeof client.waitForTransactionReceipt !== "function") return tx;
-  return client.waitForTransactionReceipt({
+  if (typeof client.waitForTransactionReceipt !== "function") {
+    throw new Error("GenLayer client does not expose waitForTransactionReceipt");
+  }
+  const receipt = await client.waitForTransactionReceipt({
     hash,
     status,
     retries,
     interval: 3000,
   });
+  if (status === "FINALIZED") {
+    assertSuccessfulExecution(receipt, label);
+  }
+  return receipt;
 }
 
 export async function waitAccepted(client, tx, label) {
