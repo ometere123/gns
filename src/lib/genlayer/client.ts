@@ -2,13 +2,18 @@
 
 // GenLayer client wrapper for the GNS frontend.
 //
-// Reads use a plain GenLayer client (no account needed).
-// Writes route through the injected wallet (window.ethereum) via the SDK's
-// own provider flow. We do NOT manually shape viem-style eth_* calls — the
-// SDK handles GenLayer's gen_* RPC methods and gas/nonce internally.
+// v1 compatibility:
+// - readView/writeMethod keep the existing NEXT_PUBLIC_GNS_CONTRACT_ADDRESS API.
+//
+// v2:
+// - readViewAt/writeMethodAt support an explicit contract address.
+// - verdict-bearing writes can require FINALIZED rather than treating ACCEPTED
+//   as an authoritative trust result.
 
 export const GNS_CONTRACT_ADDRESS =
   (process.env.NEXT_PUBLIC_GNS_CONTRACT_ADDRESS || "").trim();
+export const GNS_V2_CONTRACT_ADDRESS =
+  (process.env.NEXT_PUBLIC_GNS_V2_CONTRACT_ADDRESS || "").trim();
 export const GENLAYER_RPC_URL =
   (process.env.NEXT_PUBLIC_GENLAYER_RPC_URL || "https://studio.genlayer.com/api").trim();
 export const CHAIN_NAME =
@@ -19,6 +24,13 @@ export const EXPLORER_URL =
 export function isConfigured(): boolean {
   return GNS_CONTRACT_ADDRESS.length > 0;
 }
+
+export function isV2Configured(): boolean {
+  return GNS_V2_CONTRACT_ADDRESS.length > 0;
+}
+
+type ReceiptStatus = "ACCEPTED" | "FINALIZED";
+type StateStatus = "accepted" | "finalized";
 
 type AnyClient = {
   readContract: (args: {
@@ -33,7 +45,12 @@ type AnyClient = {
     args: unknown[];
     value?: bigint;
   }) => Promise<unknown>;
-  waitForTransactionReceipt?: (args: { hash: string; status?: string; retries?: number; interval?: number }) => Promise<unknown>;
+  waitForTransactionReceipt?: (args: {
+    hash: string;
+    status?: string;
+    retries?: number;
+    interval?: number;
+  }) => Promise<unknown>;
   connect?: (chainName: string) => Promise<unknown>;
   initializeConsensusSmartContract?: () => Promise<unknown>;
 };
@@ -150,24 +167,45 @@ async function ensureConnected(client: AnyClient): Promise<void> {
   cachedWriteConnected = true;
 }
 
+function requireContractAddress(address: string, envName: string): string {
+  const clean = address.trim();
+  if (!clean) {
+    throw new Error(`${envName} is not configured.`);
+  }
+  return clean;
+}
+
+export async function readViewAt<T = unknown>(
+  contractAddress: string,
+  functionName: string,
+  args: unknown[] = [],
+  stateStatus: StateStatus = "accepted"
+): Promise<T> {
+  const address = requireContractAddress(contractAddress, "Contract address");
+  const client = await getReadClient();
+  if (!client) throw new Error("GenLayer client unavailable in this environment.");
+  const out = await client.readContract({
+    address,
+    functionName,
+    args,
+    stateStatus,
+  });
+  return out as T;
+}
+
 export async function readView<T = unknown>(
   functionName: string,
   args: unknown[] = []
 ): Promise<T> {
-  if (!isConfigured()) {
-    throw new Error(
-      "GNS contract address is not configured. Set NEXT_PUBLIC_GNS_CONTRACT_ADDRESS in .env.local"
-    );
-  }
-  const client = await getReadClient();
-  if (!client) throw new Error("GenLayer client unavailable in this environment.");
-  const out = await client.readContract({
-    address: GNS_CONTRACT_ADDRESS,
+  return readViewAt<T>(
+    requireContractAddress(
+      GNS_CONTRACT_ADDRESS,
+      "NEXT_PUBLIC_GNS_CONTRACT_ADDRESS"
+    ),
     functionName,
     args,
-    stateStatus: "accepted",
-  });
-  return out as T;
+    "accepted"
+  );
 }
 
 function getConnectedAddress(): string | undefined {
@@ -176,38 +214,61 @@ function getConnectedAddress(): string | undefined {
   return v || undefined;
 }
 
-export async function writeMethod(
+export async function writeMethodAt(
+  contractAddress: string,
   functionName: string,
   args: unknown[] = [],
-  value?: bigint
-): Promise<unknown> {
-  if (!isConfigured()) {
-    throw new Error(
-      "GNS contract address is not configured. Set NEXT_PUBLIC_GNS_CONTRACT_ADDRESS in .env.local"
-    );
+  value?: bigint,
+  options?: {
+    waitStatus?: ReceiptStatus;
+    strictWait?: boolean;
+    retries?: number;
+    interval?: number;
   }
+): Promise<unknown> {
+  const target = requireContractAddress(contractAddress, "Contract address");
   const address = getConnectedAddress();
   const client = await getWriteClient(address);
   if (!client) throw new Error("Connect an injected wallet to send transactions.");
   await ensureConnected(client);
+
   const tx = (await client.writeContract({
-    address: GNS_CONTRACT_ADDRESS,
+    address: target,
     functionName,
     args,
     ...(value !== undefined ? { value } : {}),
   })) as { hash?: string } | string;
+
   const hash = typeof tx === "string" ? tx : tx?.hash;
   if (hash && client.waitForTransactionReceipt) {
     try {
       await client.waitForTransactionReceipt({
         hash,
-        status: "ACCEPTED",
-        retries: 50,
-        interval: 3000,
+        status: options?.waitStatus || "ACCEPTED",
+        retries: options?.retries ?? 50,
+        interval: options?.interval ?? 3000,
       });
     } catch (e) {
+      if (options?.strictWait) throw e;
       console.warn("waitForTransactionReceipt timed out or failed", e);
     }
   }
   return tx;
+}
+
+export async function writeMethod(
+  functionName: string,
+  args: unknown[] = [],
+  value?: bigint
+): Promise<unknown> {
+  return writeMethodAt(
+    requireContractAddress(
+      GNS_CONTRACT_ADDRESS,
+      "NEXT_PUBLIC_GNS_CONTRACT_ADDRESS"
+    ),
+    functionName,
+    args,
+    value,
+    { waitStatus: "ACCEPTED", strictWait: false }
+  );
 }
