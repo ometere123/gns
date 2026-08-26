@@ -1,6 +1,6 @@
 {
   "name": "gns-genlayer-naming-service",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -9,7 +9,9 @@
     "lint": "next lint",
     "keys:gns": "node scripts/generate-gns-keys.mjs",
     "deploy:gns": "node scripts/deploy-gns.mjs",
-    "smoke:gns": "node scripts/smoke-gns.mjs"
+    "deploy:authenticity": "node scripts/deploy-authenticity.mjs",
+    "smoke:gns": "node scripts/smoke-gns.mjs",
+    "smoke:authenticity": "node scripts/smoke-authenticity.mjs"
   },
   "dependencies": {
     "genlayer-js": "1.1.7",
