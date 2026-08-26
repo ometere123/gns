@@ -7,8 +7,10 @@ on:
   pull_request:
     paths:
       - "contracts/GNSAuthenticity.py"
+      - "tests/direct/**"
       - "src/**"
       - "scripts/**"
+      - "requirements-dev.txt"
       - "package*.json"
       - ".github/workflows/v2-ci.yml"
 
@@ -24,14 +26,17 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install GenVM linter
-        run: pip install genvm-linter
+      - name: Install GenLayer test toolchain
+        run: pip install -r requirements-dev.txt
 
       - name: GenVM lint authenticity contract
         run: genvm-lint check contracts/GNSAuthenticity.py
 
       - name: Python syntax check
         run: python -m py_compile contracts/GNSAuthenticity.py
+
+      - name: Direct Mode security tests
+        run: pytest tests/direct -v
 
       - name: Set up Node
         uses: actions/setup-node@v4
