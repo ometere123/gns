@@ -31,8 +31,24 @@ const CLAIM_TYPES: Array<{ value: AuthenticityClaimType; label: string }> = [
   { value: "public_identity", label: "Public identity" },
 ];
 
+function githubRawAttestationUrl(value: string): string {
+  const clean = String(value || "").trim().replace(/\/$/, "");
+  const prefix = "https://github.com/";
+  if (!clean.startsWith(prefix)) return "";
+  const parts = clean.slice(prefix.length).split("/").filter(Boolean);
+  if (parts.length < 2) return "";
+  const owner = parts[0];
+  const repo = parts[1].replace(/\.git$/, "");
+  return `https://raw.githubusercontent.com/${owner}/${repo}/HEAD/gns-claim.json`;
+}
+
 function initialAttestationUrl(records: GnsRecords): string {
+  const githubRaw = githubRawAttestationUrl(String(records.github || ""));
+  if (githubRaw) return githubRaw;
+
   const website = String(records.website || "").trim().replace(/\/$/, "");
+  const websiteGithubRaw = githubRawAttestationUrl(website);
+  if (websiteGithubRaw) return websiteGithubRaw;
   if (website.startsWith("https://")) {
     return `${website}/.well-known/gns-claim.json`;
   }
@@ -206,7 +222,7 @@ export function AuthenticityClaimPanel({
             placeholder="Describe the relationship this namespace claims. Context is treated as untrusted evidence, not proof."
           />
           <p className="text-xs text-muted">
-            The attestation URL must be under this namespace&apos;s registered website/agent endpoint or registered GitHub repository. A random HTTPS URL cannot establish ownership.
+            The attestation URL must be under this namespace&apos;s registered website/agent endpoint or registered GitHub repository and must be publicly retrievable by validators. GitHub repo records default to a raw `HEAD/gns-claim.json` URL; private repositories cannot serve as public validator evidence.
           </p>
           <Button onClick={createClaim} loading={busy === "create"} disabled={!isOwner}>
             Create claim
