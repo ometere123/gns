@@ -4,7 +4,7 @@ GNS v3 keeps namespace state and authenticity on GenLayer while using Arc only f
 
 ## `GNSRegistry.py`
 
-Version: `2.1.0-arc-usdc-reservations`
+Version: `2.1.1-arc-usdc-reservations`
 
 The registry is authoritative for `.gen` ownership, expiry, records, transfers, reverse lookup and subnames.
 

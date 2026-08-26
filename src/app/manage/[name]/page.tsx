@@ -38,7 +38,9 @@ export default function ManagePage({ params }: { params: Promise<{ name: string 
 
   useEffect(load, [fullName]);
 
+  const isExpired = data?.status === "expired";
   const isOwner = Boolean(address && data && data.owner.toLowerCase() === address.toLowerCase());
+  const isActiveOwner = Boolean(isOwner && !isExpired);
 
   const onTransfer = async () => {
     if (!newOwner) {
@@ -93,18 +95,29 @@ export default function ManagePage({ params }: { params: Promise<{ name: string 
         fullName={data.full_name}
         initialRecords={data.records || {}}
         initialPrimaryAddress={data.primary_address}
-        isOwner={isOwner}
+        isOwner={isActiveOwner}
       />
 
       <AuthenticityClaimPanel
         fullName={data.full_name}
         owner={data.owner}
         records={data.records || {}}
-        isOwner={isOwner}
+        isOwner={isActiveOwner}
       />
 
       <SoulStampVerification owner={data.owner} records={data.records || {}} />
 
+      {isExpired ? (
+        <Card padding="lg" className="space-y-4">
+          <h3 className="font-semibold text-ink">This namespace has expired</h3>
+          <p className="text-sm text-muted">
+            This namespace has expired and is available for registration. Historical ownership is read-only.
+          </p>
+          <Link href={`/register/${encodeURIComponent(data.full_name)}`}>
+            <Button>Register {data.full_name}</Button>
+          </Link>
+        </Card>
+      ) : (
       <Card padding="lg" className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -117,7 +130,7 @@ export default function ManagePage({ params }: { params: Promise<{ name: string 
             value={years}
             onChange={(e) => setYears(Number(e.target.value))}
             className="h-11 rounded-lg border border-borderGrey bg-white px-3 text-sm"
-            disabled={!isOwner}
+            disabled={!isActiveOwner}
           >
             {[1, 2, 3, 5].map((y) => (
               <option key={y} value={y}>{y} year{y > 1 ? "s" : ""}</option>
@@ -129,12 +142,13 @@ export default function ManagePage({ params }: { params: Promise<{ name: string 
           action="renew"
           fullName={fullName}
           years={years}
-          disabled={!isOwner}
+          disabled={!isActiveOwner}
           onFinalize={(receipt) => renewName(fullName, years, receipt.txHash, receipt.logIndex)}
           onSuccess={load}
         />
-        {!isOwner && <p className="text-xs text-muted">Only the current namespace owner can renew this name.</p>}
+        {!isActiveOwner && <p className="text-xs text-muted">Only the current active namespace owner can renew this name.</p>}
       </Card>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card padding="lg">
@@ -142,7 +156,7 @@ export default function ManagePage({ params }: { params: Promise<{ name: string 
           <p className="mt-1 text-xs text-muted">Send namespace ownership to another GenLayer address.</p>
           <div className="mt-3 space-y-2">
             <Input value={newOwner} onChange={(e) => setNewOwner(e.target.value)} placeholder="0x…" />
-            <Button size="sm" onClick={onTransfer} loading={busy === "transfer"} disabled={!isOwner}>Transfer</Button>
+            <Button size="sm" onClick={onTransfer} loading={busy === "transfer"} disabled={!isActiveOwner}>Transfer</Button>
           </div>
         </Card>
 
@@ -150,7 +164,7 @@ export default function ManagePage({ params }: { params: Promise<{ name: string 
           <h3 className="font-semibold text-ink">Set as Primary</h3>
           <p className="mt-1 text-xs text-muted">Reverse-resolve your wallet to this namespace.</p>
           <div className="mt-3">
-            <Button size="sm" onClick={onPrimary} loading={busy === "primary"} disabled={!isOwner}>Set Primary Name</Button>
+            <Button size="sm" onClick={onPrimary} loading={busy === "primary"} disabled={!isActiveOwner}>Set Primary Name</Button>
           </div>
         </Card>
       </div>

@@ -1,4 +1,5 @@
 import json
+import re
 
 
 REGISTRY = "0x" + "1" * 40
@@ -53,11 +54,11 @@ def install_claim_mocks(direct_vm, attestation_body):
     # Direct Mode mock_web matches the requested URL pattern. Exact URLs keep this
     # lifecycle test honest and avoid accidentally missing the source-bound proof.
     direct_vm.mock_web(
-        ATTESTATION_URL,
+        re.escape(ATTESTATION_URL),
         {"status": 200, "body": json.dumps(attestation_body)},
     )
     direct_vm.mock_web(
-        CORROBORATION_URL,
+        re.escape(CORROBORATION_URL),
         {
             "status": 200,
             "body": "Public project repository controlled by the namespace claimant.",
@@ -107,8 +108,10 @@ def test_public_claim_verify_challenge_resolve_lifecycle(direct_vm, direct_deplo
     }
 
     install_claim_mocks(direct_vm, attestation)
+    direct_vm.strict_mocks = True
+    direct_vm.check_pickling = True
     direct_vm.mock_llm(
-        "Adjudicate a GNS authenticity claim",
+        re.escape("CLAIM TYPE: project"),
         json.dumps(
             {
                 "decision": "VERIFIED",
@@ -121,7 +124,7 @@ def test_public_claim_verify_challenge_resolve_lifecycle(direct_vm, direct_deplo
     verified_raw = contract.verify_claim("1")
     verified = json.loads(verified_raw)
     assert verified["success"] is True
-    assert verified["verdict"]["decision"] == "VERIFIED", verified["verdict"]
+    assert verified["verdict"]["decision"] == "VERIFIED", json.dumps(verified["verdict"], sort_keys=True)
     assert int(verified["verdict"]["evidence_expires_at"]) == issued_at + 3600
     assert direct_vm.run_validator() is True
 
@@ -148,14 +151,14 @@ def test_public_claim_verify_challenge_resolve_lifecycle(direct_vm, direct_deplo
     direct_vm.clear_mocks()
     install_claim_mocks(direct_vm, attestation)
     direct_vm.mock_web(
-        CHALLENGE_URL,
+        re.escape(CHALLENGE_URL),
         {
             "status": 200,
             "body": "The challenger supplies no evidence that defeats the controlled public claim.",
         },
     )
     direct_vm.mock_llm(
-        "Resolve a challenge against a verified GNS authenticity",
+        re.escape("CHALLENGE REASON: MISREPRESENTATION"),
         json.dumps(
             {
                 "decision": "UPHOLD",

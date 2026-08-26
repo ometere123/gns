@@ -77,7 +77,7 @@ The Arc admin cannot modify `.gen` ownership or authenticity verdicts. The treas
 
 ### `contracts/GNSRegistry.py`
 
-GenLayer namespace source of truth. Current v3 version: `2.1.0-arc-usdc-reservations`.
+GenLayer namespace source of truth. Current v3 version: `2.1.1-arc-usdc-reservations`.
 
 Responsibilities include ownership, expiry, records, reverse lookup, transfers, subnames, registration reservations, deterministic reports/admin controls, Arc receipt verification and one-time receipt consumption.
 
@@ -123,20 +123,20 @@ Operational controls at `/ops-gns` are split by on-chain role; frontend access c
 
 ## Validation
 
-Validated on branch `v3-arc-usdc` at commit `33b300b4db2f925af886d68b38ec821208f8daaf` before this documentation-only update:
+Current local pre-deployment validation:
 
 - GenVM lint: both GenLayer contracts passed;
 - Python compile: passed;
-- Direct Mode: **35/35 passed**;
+- Direct Mode: **37/37 passed**;
 - Foundry formatting: passed;
 - Solidity 0.8.24 build: passed;
 - `GNSPaymentRouter` runtime size: **5,713 bytes**;
-- Foundry: **10/10 passed**;
+- Foundry: **17/17 passed**;
 - `npm ci`: passed;
 - `npm audit --audit-level=high`: **0 vulnerabilities**;
 - Next.js 15.5.24 optimized production build: passed.
 
-GitHub Actions run: `33012823039`.
+No fresh live deployment or CI run is claimed here until the deployment wallet is configured.
 
 ## Local configuration
 

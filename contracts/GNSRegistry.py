@@ -309,7 +309,10 @@ class GNSRegistry(gl.Contract):
                 "params": params,
             },
         )
-        if int(response.status_code) != 200:
+        status_code = int(
+            getattr(response, "status_code", getattr(response, "status", 0))
+        )
+        if status_code != 200:
             raise gl.vm.UserError("Arc RPC request failed")
         payload = json.loads(response.body.decode("utf-8"))
         if payload.get("error") is not None:

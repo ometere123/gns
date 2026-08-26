@@ -133,12 +133,6 @@ export function updateLocalAuthenticityAddress(address) {
   updateLocalEnvValue("NEXT_PUBLIC_GNS_AUTHENTICITY_CONTRACT_ADDRESS", address);
 }
 
-export function genToWei(gen) {
-  const [whole, frac = ""] = String(gen).split(".");
-  const fracPadded = (frac + "0".repeat(18)).slice(0, 18);
-  return BigInt(whole || "0") * 10n ** 18n + BigInt(fracPadded || "0");
-}
-
 export function uniqueLabel(prefix) {
   const stamp = Date.now().toString(36).slice(-7);
   return `${prefix}${stamp}`.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 32);

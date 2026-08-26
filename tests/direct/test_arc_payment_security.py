@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 
@@ -81,6 +82,35 @@ def test_reserver_must_keep_same_terms_until_cancel(direct_vm, direct_deploy):
         contract.reserve_registration("papito", 2, PRIMARY)
     contract.cancel_registration_reservation("papito.gen")
     assert contract.get_registration_reservation("papito.gen") == "{}"
+
+
+def test_expired_owner_loses_renewal_and_registration_privilege(direct_vm, direct_deploy):
+    contract = deploy(direct_deploy)
+    now = contract._now()
+    expired = contract._make_name_object(
+        "expired", "expired.gen", "", False, PAYER, PRIMARY,
+        now - 100, now - 1, {},
+    )
+    contract._save_name_obj("expired.gen", expired)
+    contract._add_owner_name(PAYER, "expired.gen")
+    contract.reverse_records[PRIMARY] = "expired.gen"
+
+    direct_vm.sender = PAYER
+    with direct_vm.expect_revert("Name is expired"):
+        contract.renew("expired.gen", 1, TX, 0)
+
+    assert contract.owner_of("expired.gen") == ""
+    assert contract.reverse_lookup(PRIMARY) == ""
+    assert contract.is_available("expired.gen") is True
+
+    # Expiry removes the former owner's privilege; anyone may compete for a
+    # fresh reservation once the prior reservation is cancelled.
+    reserved = json.loads(contract.reserve_registration("expired.gen", 1, PRIMARY))
+    assert reserved["data"]["reserver"] == PAYER
+    contract.cancel_registration_reservation("expired.gen")
+    direct_vm.sender = OTHER
+    reserved_by_other = json.loads(contract.reserve_registration("expired.gen", 1, PRIMARY))
+    assert reserved_by_other["data"]["reserver"] == OTHER
 
 
 def test_registration_requires_matching_active_reservation_source_guard():

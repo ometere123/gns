@@ -35,7 +35,7 @@ console.log(`Inspecting GNS v3 registry ${contract}`);
 console.log(`Expected Arc router ${expectedRouter}`);
 
 const version = String(await read("contract_version"));
-if (version !== "2.1.0-arc-usdc-reservations") {
+if (version !== "2.1.1-arc-usdc-reservations") {
   throw new Error(`Unexpected registry version: ${version}`);
 }
 

@@ -201,7 +201,12 @@ class GNSAuthenticity(gl.Contract):
         }
         try:
             response = gl.nondet.web.request(source["url"], method="GET")
-            status_code = int(response.status_code)
+            # GenVM exposes status_code; the v0.2.x Direct Mode SDK exposes the
+            # same response field as status. Accept both without changing the
+            # fail-closed handling for malformed responses.
+            status_code = int(
+                getattr(response, "status_code", getattr(response, "status", 0))
+            )
             body_bytes = response.body
             try:
                 body_text = body_bytes.decode("utf-8")

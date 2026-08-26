@@ -117,7 +117,7 @@ The script must:
 - require successful execution;
 - record the resulting public registry address locally.
 
-Verify `contract_version()` returns `2.1.0-arc-usdc-reservations` and `get_arc_payment_config()` reports the exact Arc router.
+Verify `contract_version()` returns `2.1.1-arc-usdc-reservations` and `get_arc_payment_config()` reports the exact Arc router.
 
 ## 7. Deploy fresh authenticity
 
@@ -208,17 +208,17 @@ Do not use an unowned domain and do not expose a private repository merely to ma
 
 ## 12. Validated source state
 
-Pre-deployment CI on commit `33b300b4db2f925af886d68b38ec821208f8daaf`:
+Current local pre-deployment validation:
 
 - GenVM lint: passed for registry and authenticity;
-- Direct Mode: `35/35`;
+- Direct Mode: `37/37`;
 - Solidity build: passed;
 - router runtime: `5,713 bytes`;
-- Foundry: `10/10`;
+- Foundry: `17/17`;
 - npm audit: `0 vulnerabilities`;
-- Next.js production build: passed.
+- Next.js 15.5.24 production build: passed.
 
-GitHub Actions run: `33012823039`.
+No fresh live deployment or CI run is claimed here until the deployment wallet is configured.
 
 ## 13. Final evidence record
 

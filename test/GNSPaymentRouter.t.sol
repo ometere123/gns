@@ -36,6 +36,50 @@ contract MockUSDC {
     }
 }
 
+contract FalseUSDC {
+    function balanceOf(address) external pure returns (uint256) {
+        return type(uint256).max;
+    }
+
+    function transfer(address, uint256) external pure returns (bool) {
+        return false;
+    }
+
+    function transferFrom(address, address, uint256) external pure returns (bool) {
+        return false;
+    }
+}
+
+contract NoReturnUSDC {
+    function balanceOf(address) external pure returns (uint256) {
+        return type(uint256).max;
+    }
+
+    fallback() external { }
+}
+
+contract ReentrantUSDC {
+    GNSPaymentRouter private router;
+    bool public reentryBlocked;
+
+    function setRouter(GNSPaymentRouter router_) external {
+        router = router_;
+    }
+
+    function balanceOf(address) external pure returns (uint256) {
+        return type(uint256).max;
+    }
+
+    function transferFrom(address, address, uint256) external returns (bool) {
+        try router.payRegistration("reentrant.gen", 1) {
+            reentryBlocked = false;
+        } catch {
+            reentryBlocked = true;
+        }
+        return true;
+    }
+}
+
 contract Actor {
     function approve(MockUSDC token, address spender, uint256 amount) external {
         require(token.approve(spender, amount), "approve");
@@ -94,12 +138,50 @@ contract GNSPaymentRouterTest {
         payer.approve(token, address(router), type(uint256).max);
     }
 
+    function testConstructorRejectsInvalidConfiguration() public {
+        bool ok;
+        try new GNSPaymentRouter(address(0), address(this), address(this), 1, 1) {
+            ok = true;
+        } catch { }
+        require(!ok, "zero USDC accepted");
+
+        try new GNSPaymentRouter(address(token), address(0), address(this), 1, 1) {
+            ok = true;
+        } catch { }
+        require(!ok, "zero admin accepted");
+
+        try new GNSPaymentRouter(address(token), address(this), address(0), 1, 1) {
+            ok = true;
+        } catch { }
+        require(!ok, "zero treasury accepted");
+
+        try new GNSPaymentRouter(address(token), address(this), address(this), 0, 1) {
+            ok = true;
+        } catch { }
+        require(!ok, "zero registration price accepted");
+
+        try new GNSPaymentRouter(address(token), address(this), address(this), 1, 1_000_000_001) {
+            ok = true;
+        } catch { }
+        require(!ok, "excessive renewal price accepted");
+    }
+
     function testRegistrationPaymentTransfersUSDC() public {
         uint256 amount = payer.payRegistration(router, "papito.gen", 2);
         require(amount == 10 * ONE_USDC, "wrong amount");
         require(token.balanceOf(address(router)) == 10 * ONE_USDC, "router balance");
         require(router.totalCollected() == 10 * ONE_USDC, "collected");
         require(router.paymentCount() == 1, "count");
+    }
+
+    function testPaymentEventHashAndExactAmount() public {
+        payer.payRegistration(router, "papito.gen", 1);
+        require(
+            router.namespaceHash("papito.gen") == sha256(bytes("papito.gen")),
+            "wrong namespace hash"
+        );
+        require(router.totalCollected() == 5 * ONE_USDC, "wrong exact amount");
+        require(router.paymentCount() == 1, "wrong payment count");
     }
 
     function testRenewalUsesIndependentPrice() public {
@@ -182,5 +264,81 @@ contract GNSPaymentRouterTest {
         (bool ok,) = address(router)
             .call(abi.encodeWithSelector(GNSPaymentRouter.quoteRegistration.selector, uint16(0)));
         require(!ok, "zero years accepted");
+        (ok,) = address(router)
+            .call(abi.encodeWithSelector(GNSPaymentRouter.quoteRenewal.selector, uint16(6)));
+        require(!ok, "six years accepted");
+    }
+
+    function testInvalidPricesRejected() public {
+        (bool ok,) = address(router)
+            .call(abi.encodeWithSelector(GNSPaymentRouter.setPrices.selector, 0, 1 * ONE_USDC));
+        require(!ok, "zero registration price accepted");
+        (ok,) = address(router)
+            .call(
+                abi.encodeWithSelector(
+                    GNSPaymentRouter.setPrices.selector, 1 * ONE_USDC, 1_000 * ONE_USDC + 1
+                )
+            );
+        require(!ok, "excessive renewal price accepted");
+    }
+
+    function testInvalidPaymentYearsRejected() public {
+        (bool ok,) = address(payer)
+            .call(
+                abi.encodeWithSelector(
+                    Actor.payRegistration.selector, router, "papito.gen", uint16(0)
+                )
+            );
+        require(!ok, "zero payment years accepted");
+        (ok,) = address(payer)
+            .call(
+                abi.encodeWithSelector(Actor.payRenewal.selector, router, "papito.gen", uint16(6))
+            );
+        require(!ok, "six payment years accepted");
+    }
+
+    function testFalseReturningTokenFailsClosed() public {
+        FalseUSDC falseToken = new FalseUSDC();
+        GNSPaymentRouter falseRouter = new GNSPaymentRouter(
+            address(falseToken), address(this), address(this), 5 * ONE_USDC, 3 * ONE_USDC
+        );
+        (bool ok,) = address(falseRouter)
+            .call(
+                abi.encodeWithSelector(
+                    falseRouter.payRegistration.selector, "papito.gen", uint16(1)
+                )
+            );
+        require(!ok, "false token transfer accepted");
+    }
+
+    function testNoReturnTokenIsAccepted() public {
+        NoReturnUSDC noReturnToken = new NoReturnUSDC();
+        GNSPaymentRouter noReturnRouter = new GNSPaymentRouter(
+            address(noReturnToken), address(this), address(this), 5 * ONE_USDC, 3 * ONE_USDC
+        );
+        (bool ok,) = address(noReturnRouter)
+            .call(
+                abi.encodeWithSelector(
+                    noReturnRouter.payRegistration.selector, "papito.gen", uint16(1)
+                )
+            );
+        require(ok, "no-return token transfer rejected");
+        require(noReturnRouter.paymentCount() == 1, "no-return payment not counted");
+    }
+
+    function testReentrancyIsBlocked() public {
+        ReentrantUSDC reentrantToken = new ReentrantUSDC();
+        GNSPaymentRouter reentrantRouter = new GNSPaymentRouter(
+            address(reentrantToken), address(this), address(this), 5 * ONE_USDC, 3 * ONE_USDC
+        );
+        reentrantToken.setRouter(reentrantRouter);
+        (bool ok,) = address(reentrantRouter)
+            .call(
+                abi.encodeWithSelector(
+                    reentrantRouter.payRegistration.selector, "papito.gen", uint16(1)
+                )
+            );
+        require(ok, "outer payment failed");
+        require(reentrantToken.reentryBlocked(), "reentrant payment was not blocked");
     }
 }
