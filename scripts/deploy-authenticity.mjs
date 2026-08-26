@@ -23,21 +23,33 @@ const code = fs.readFileSync(
 console.log(`Deploying GNSAuthenticity with ${deployer.address}`);
 console.log(`Registry dependency: ${registry}`);
 
+if (typeof client.initializeConsensusSmartContract === "function") {
+  await client.initializeConsensusSmartContract();
+}
+
 const tx = await client.deployContract({
   account: deployer,
   code,
   args: [registry],
 });
 const receipt = await waitFinalized(client, tx, "deploy authenticity");
-const address = findAddressDeep(receipt) || findAddressDeep(tx);
 
-if (!address) {
+// On Studionet the canonical deployment address is receipt.data.contract_address.
+// Keep the recursive finder only as a compatibility fallback for older SDK shapes.
+const canonicalAddress =
+  receipt?.data?.contract_address ||
+  receipt?.data?.contractAddress ||
+  receipt?.contractAddress ||
+  "";
+const address = canonicalAddress || findAddressDeep(receipt) || findAddressDeep(tx);
+
+if (!address || !/^0x[a-fA-F0-9]{40}$/.test(String(address))) {
   console.log(JSON.stringify({ tx, receipt }, null, 2));
   throw new Error(
-    "Deployment finalized but the authenticity contract address was not found in the SDK response."
+    "Deployment finalized successfully but the authenticity contract address could not be identified safely."
   );
 }
 
-updateLocalAuthenticityAddress(address);
+updateLocalAuthenticityAddress(String(address));
 console.log(`GNS authenticity deployed and finalized: ${address}`);
 console.log("Updated .env.local NEXT_PUBLIC_GNS_AUTHENTICITY_CONTRACT_ADDRESS");
