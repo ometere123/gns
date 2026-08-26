@@ -42,13 +42,19 @@ export function makeClient(account) {
 
 function executionResultName(receipt) {
   if (!receipt || typeof receipt !== "object") return "";
-  return String(
+  const direct = String(
     receipt.txExecutionResultName ??
       receipt.tx_execution_result_name ??
       receipt.executionResultName ??
       receipt.execution_result_name ??
       ""
   ).toUpperCase();
+  if (direct) return direct;
+
+  // The current Studionet SDK exposes execution status inside the finalized
+  // consensus receipt rather than copying it to the top-level object.
+  const leader = receipt.consensus_data?.leader_receipt?.[0];
+  return String(leader?.execution_result ?? "").toUpperCase();
 }
 
 export function assertSuccessfulExecution(receipt, label = "transaction") {
