@@ -31,8 +31,19 @@ jobs:
           console.log("REGISTRY", address);
           console.log("VERSION", String(await read("contract_version")));
           console.log("TOTAL_NAMES", String(await read("get_total_names")));
-          console.log("ADMIN", String(await read("get_admin")));
-          console.log("TREASURY", String(await read("get_treasury")));
-          const papito = await read("resolve", ["papito902odb.gen"]);
-          console.log("PAPITO", typeof papito === "string" ? papito : JSON.stringify(papito));
+          const owners = {
+            DEPLOYER: "0x231EF01E282385eC2E22394469f1C8c6C28Fd6b1",
+            TEST_ALICE: "0x5feD116262DEB9Cb58B808C060D0F4D2809b6e7c",
+            TEST_BUILDER: "0x268a14Adb45e9CCcdf950fB1e4c2aC4f226b6eF5",
+            TEST_REPORTER: "0x6e27b7B7992c1310Ee2876A711ace934818125A5",
+            PAPITO_OWNER: "0x80fabb9ada829e4a22b7a3aadf7a4f955abd5725"
+          };
+          for (const [role, owner] of Object.entries(owners)) {
+            try {
+              const names = await read("get_names_by_owner", [owner]);
+              console.log(`${role}_NAMES`, typeof names === "string" ? names : JSON.stringify(names));
+            } catch (error) {
+              console.log(`${role}_ERROR`, error?.message || String(error));
+            }
+          }
           NODE
