@@ -115,13 +115,17 @@ export function AuthenticityStatusCard({ fullName }: { fullName: string }) {
       {verdict && (
         <div className="rounded-lg border border-borderGrey p-4 text-sm">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="font-semibold text-ink">Finalized verdict #{verdict.id}</p>
+            <p className="font-semibold text-ink">Finalized consensus decision #{verdict.id}</p>
             <Badge tone={tone(verdict.decision)}>{verdict.decision}</Badge>
           </div>
-          <p className="mt-2 font-medium text-ink">{verdict.reason_code}</p>
+          <p className="mt-3 text-[11px] font-medium uppercase tracking-wide text-muted">Leader rationale · informational</p>
+          <p className="mt-1 font-medium text-ink">{verdict.reason_code}</p>
           {verdict.summary && <p className="mt-1 text-muted">{verdict.summary}</p>}
           <p className="mt-3 break-all font-mono text-[11px] text-muted">
-            Evidence digest: {verdict.evidence_digest}
+            Leader evidence digest · provenance metadata: {verdict.evidence_digest}
+          </p>
+          <p className="mt-2 text-[11px] text-muted">
+            Validators independently compare the consensus decision and evidence expiry; free-form rationale and raw-byte digest are retained as provenance metadata.
           </p>
         </div>
       )}
