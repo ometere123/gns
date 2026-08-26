@@ -41,18 +41,19 @@ contract Actor {
         require(token.approve(spender, amount), "approve");
     }
 
-    function payRegistration(GNSPaymentRouter router, string calldata name, uint16 years)
-        external
-        returns (uint256)
-    {
-        return router.payRegistration(name, years);
+    function payRegistration(
+        GNSPaymentRouter router,
+        string calldata name,
+        uint16 durationYears
+    ) external returns (uint256) {
+        return router.payRegistration(name, durationYears);
     }
 
-    function payRenewal(GNSPaymentRouter router, string calldata name, uint16 years)
+    function payRenewal(GNSPaymentRouter router, string calldata name, uint16 durationYears)
         external
         returns (uint256)
     {
-        return router.payRenewal(name, years);
+        return router.payRenewal(name, durationYears);
     }
 
     function acceptAdmin(GNSPaymentRouter router) external {
@@ -168,18 +169,17 @@ contract GNSPaymentRouterTest {
 
         uint256 beforeBalance = token.balanceOf(address(nextTreasury));
         nextTreasury.withdraw(router, 2 * ONE_USDC);
-        require(token.balanceOf(address(nextTreasury)) == beforeBalance + 2 * ONE_USDC, "withdraw");
+        require(
+            token.balanceOf(address(nextTreasury)) == beforeBalance + 2 * ONE_USDC,
+            "withdraw"
+        );
         require(router.totalWithdrawn() == 2 * ONE_USDC, "withdraw accounting");
     }
 
     function testNonTreasuryCannotWithdraw() public {
         payer.payRegistration(router, "papito.gen", 1);
         (bool ok,) = address(payer).call(
-            abi.encodeWithSelector(
-                Actor.withdraw.selector,
-                router,
-                1 * ONE_USDC
-            )
+            abi.encodeWithSelector(Actor.withdraw.selector, router, 1 * ONE_USDC)
         );
         require(!ok, "non-treasury withdrew");
     }

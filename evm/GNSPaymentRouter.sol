@@ -9,8 +9,8 @@ interface IERC20Minimal {
 
 /// @title GNSPaymentRouter
 /// @notice Arc USDC payment rail for GNS registrations and renewals.
-/// @dev The router never decides namespace ownership. It only collects USDC and emits
-///      a compact receipt that the GenLayer registry independently verifies from Arc RPC.
+/// @dev Namespace ownership and authenticity stay on GenLayer. This router only
+///      collects USDC and emits receipts that GenLayer independently verifies.
 contract GNSPaymentRouter {
     uint8 public constant ACTION_REGISTER = 1;
     uint8 public constant ACTION_RENEW = 2;
@@ -38,7 +38,7 @@ contract GNSPaymentRouter {
         address indexed payer,
         bytes32 indexed namespaceHash,
         uint8 indexed action,
-        uint16 years,
+        uint16 durationYears,
         uint256 amount
     );
     event PricesUpdated(uint256 registrationPricePerYear, uint256 renewalPricePerYear);
@@ -96,30 +96,35 @@ contract GNSPaymentRouter {
         renewalPricePerYear = renewalPricePerYear_;
     }
 
-    function quoteRegistration(uint16 years) external view returns (uint256) {
-        _validateYears(years);
-        return registrationPricePerYear * uint256(years);
+    function quoteRegistration(uint16 durationYears) external view returns (uint256) {
+        _validateYears(durationYears);
+        return registrationPricePerYear * uint256(durationYears);
     }
 
-    function quoteRenewal(uint16 years) external view returns (uint256) {
-        _validateYears(years);
-        return renewalPricePerYear * uint256(years);
+    function quoteRenewal(uint16 durationYears) external view returns (uint256) {
+        _validateYears(durationYears);
+        return renewalPricePerYear * uint256(durationYears);
     }
 
-    function payRegistration(string calldata normalizedNamespace, uint16 years)
+    function payRegistration(string calldata normalizedNamespace, uint16 durationYears)
         external
         nonReentrant
         returns (uint256 amount)
     {
-        return _pay(normalizedNamespace, years, ACTION_REGISTER, registrationPricePerYear);
+        return _pay(
+            normalizedNamespace,
+            durationYears,
+            ACTION_REGISTER,
+            registrationPricePerYear
+        );
     }
 
-    function payRenewal(string calldata normalizedNamespace, uint16 years)
+    function payRenewal(string calldata normalizedNamespace, uint16 durationYears)
         external
         nonReentrant
         returns (uint256 amount)
     {
-        return _pay(normalizedNamespace, years, ACTION_RENEW, renewalPricePerYear);
+        return _pay(normalizedNamespace, durationYears, ACTION_RENEW, renewalPricePerYear);
     }
 
     function setPrices(uint256 registrationPricePerYear_, uint256 renewalPricePerYear_)
@@ -202,15 +207,15 @@ contract GNSPaymentRouter {
 
     function _pay(
         string calldata normalizedNamespace,
-        uint16 years,
+        uint16 durationYears,
         uint8 action,
         uint256 pricePerYear
     ) private returns (uint256 amount) {
         if (paused) revert Paused();
         _validateNamespace(normalizedNamespace);
-        _validateYears(years);
+        _validateYears(durationYears);
 
-        amount = pricePerYear * uint256(years);
+        amount = pricePerYear * uint256(durationYears);
         _safeTransferFrom(address(usdc), msg.sender, address(this), amount);
 
         totalCollected += amount;
@@ -220,28 +225,27 @@ contract GNSPaymentRouter {
             msg.sender,
             sha256(bytes(normalizedNamespace)),
             action,
-            years,
+            durationYears,
             amount
         );
     }
 
-    function _validateYears(uint16 years) private pure {
-        if (years < 1 || years > 5) revert InvalidYears();
+    function _validateYears(uint16 durationYears) private pure {
+        if (durationYears < 1 || durationYears > 5) revert InvalidYears();
     }
 
     function _validatePrice(uint256 price) private pure {
         if (price == 0 || price > MAX_PRICE_PER_YEAR) revert InvalidPrice();
     }
 
-    /// @dev Registration/renewal receipts intentionally bind to normalized root names only.
-    ///      GenLayer performs its own equivalent validation before accepting the receipt.
     function _validateNamespace(string calldata name) private pure {
         bytes calldata b = bytes(name);
         if (b.length < 7 || b.length > 36) revert InvalidNamespace();
         uint256 suffix = b.length - 4;
-        if (b[suffix] != "." || b[suffix + 1] != "g" || b[suffix + 2] != "e" || b[suffix + 3] != "n") {
-            revert InvalidNamespace();
-        }
+        if (
+            b[suffix] != "." || b[suffix + 1] != "g" || b[suffix + 2] != "e"
+                || b[suffix + 3] != "n"
+        ) revert InvalidNamespace();
         if (suffix < 3 || suffix > 32) revert InvalidNamespace();
 
         for (uint256 i = 0; i < suffix; i++) {
@@ -255,9 +259,8 @@ contract GNSPaymentRouter {
     }
 
     function _safeTransfer(address token, address to, uint256 amount) private {
-        (bool ok, bytes memory ret) = token.call(
-            abi.encodeWithSelector(IERC20Minimal.transfer.selector, to, amount)
-        );
+        (bool ok, bytes memory ret) =
+            token.call(abi.encodeWithSelector(IERC20Minimal.transfer.selector, to, amount));
         if (!ok || (ret.length != 0 && !abi.decode(ret, (bool)))) revert TransferFailed();
     }
 

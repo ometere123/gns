@@ -1,238 +1,219 @@
-<p align="center">
-  <img src="./public/gns-logo.png" alt="GNS logo" width="140" />
-</p>
+# GNS
 
-# GNS — Namespace Authenticity & Dispute Adjudication
+GNS is a human-readable `.gen` namespace protocol with evidence-grounded authenticity and disputes.
 
-GNS is an evidence-grounded authenticity layer for human-readable `.gen` namespaces. A wallet can register and manage a name in the existing deterministic registry, but **registration does not prove that the wallet legitimately represents a project, organization, agent, or public identity**.
+The v3 architecture deliberately separates three different concerns:
 
-That subjective trust question is handled by a separate GenLayer Intelligent Contract: `contracts/GNSAuthenticity.py`.
+- **GenLayer registry:** deterministic namespace ownership, records, transfers, subnames and Arc-payment receipt consumption.
+- **GenLayer authenticity:** evidence retrieval, wallet-bound attestations, authenticity verdicts, challenges and dispute resolution.
+- **Arc payment router:** USDC pricing, collection, treasury accounting, withdrawals and payment administration.
 
-The authenticity contract reads current namespace ownership and identity records from the registry, requires claim-specific wallet-bound attestations hosted on registered identity sources, retrieves every cited source inside each verdict-bearing transaction, and uses GenLayer validator consensus to decide whether a claim should be verified, rejected, upheld, revoked, or become stale because its proof is no longer current.
+GNS does **not** use GEN as its commercial pricing asset. GEN remains a GenLayer network asset wherever GenLayer transaction execution requires it. GNS registration and renewal prices are denominated in USDC on Arc.
 
-## Why GenLayer
+## Why Arc
 
-The registry layer is intentionally deterministic. Ordinary smart-contract logic is enough to register names, transfer them, store records, resolve addresses, create subnames, renew names, and account for fees.
+Arc Testnet uses USDC as its gas asset and exposes a 6-decimal USDC ERC-20 interface, which lets a user hold one asset for both GNS payment and Arc transaction fees.
 
-The GenLayer-specific problem is different:
+Current v3 constants:
 
-> **Does the current wallet controlling a namespace have sufficient, fresh, independently retrievable evidence to legitimately claim the identity attached to that namespace?**
+| Item | Value |
+| --- | --- |
+| Arc chain ID | `5042002` |
+| Arc RPC | `https://rpc.testnet.arc.network` |
+| Arc explorer | `https://testnet.arcscan.app` |
+| Arc test USDC | `0x3600000000000000000000000000000000000000` |
+| Payment event | `PaymentRecorded(address,bytes32,uint8,uint16,uint256)` |
+| Payment event topic | `0x16246dce28fe193971c235293f898fe6af15aa3539719b24d894793343162838` |
 
-And after a challenge:
+## Payment lifecycle
 
-> **Does fresh claimant and challenger evidence justify upholding or revoking that authenticity claim?**
+A browser "paid" flag is never authoritative.
 
-Those decisions involve heterogeneous web evidence, potentially conflicting claims, unstructured material, and judgment under a public policy. That is the role of `GNSAuthenticity`.
+1. The user selects a `.gen` namespace and duration.
+2. The frontend reads the price from `GNSPaymentRouter` on Arc.
+3. The user approves the exact required USDC amount if allowance is insufficient.
+4. The user calls `payRegistration()` or `payRenewal()` on Arc.
+5. The router transfers USDC into the contract and emits a receipt bound to:
+   - payer;
+   - SHA-256 of the canonical lowercase `.gen` namespace;
+   - action (`REGISTER` or `RENEW`);
+   - duration;
+   - amount.
+6. The frontend stores the Arc transaction hash and event log index locally so the flow can be resumed without paying twice.
+7. The user switches to GenLayer and submits the Arc receipt reference.
+8. GenLayer validators independently retrieve the Arc JSON-RPC transaction receipt and latest block.
+9. `GNSRegistry` verifies the successful router call, event signature, router address, payer, namespace hash, action, years, positive amount and Arc finality.
+10. The receipt key `5042002:<txHash>:<logIndex>` is consumed exactly once.
+11. Only then does the GenLayer registration or renewal finalize.
 
-## Architecture
+A legitimate Arc receipt is not invalidated merely because the protocol changes prices after the payment was made. Price enforcement happens at the immutable payment router at payment time; the GenLayer side verifies the resulting router receipt.
 
-```text
-┌──────────────────────────────┐
-│ Existing GNS Registry        │
-│ deterministic infrastructure│
-│                              │
-│ register / renew / transfer  │
-│ records / resolve / subnames │
-└──────────────┬───────────────┘
-               │ synchronous IC view
-               ▼
-┌──────────────────────────────┐
-│ GNSAuthenticity              │
-│ GenLayer trust layer         │
-│                              │
-│ create_claim                 │
-│ verify_claim                 │
-│ challenge_claim              │
-│ resolve_challenge            │
-└──────────────┬───────────────┘
-               │
-               ▼
-   finalized authenticity state
-```
+## Contracts
 
-The frontend displays registry ownership and authenticity status separately. The legacy registry `ai_status` field is **not** treated as authoritative verification by the v2 product flow.
+### `evm/GNSPaymentRouter.sol`
 
-## Claim lifecycle
+Arc USDC payment rail.
 
-1. The current registry owner creates a claim for a `project`, `agent`, `organization`, or `public_identity`.
-2. The authenticity contract snapshots the live registry owner and identity-relevant records and creates a unique claim id and challenge nonce.
-3. The owner publishes the exact wallet-bound attestation generated by the app at a source controlled by the claimed identity.
-4. `verify_claim()` re-reads current registry state, fetches every evidence URL inside the verdict transaction, validates the claim-specific attestation, then asks validators to judge only the remaining subjective relationship.
-5. The result is stored as a structured verdict and shown as authoritative only after `FINALIZED` consensus **and successful execution**.
-6. Verification becomes stale when the bound registry state, policy, or evidence freshness no longer matches.
+Responsibilities:
 
-## Wallet-bound attestation
+- registration and renewal pricing;
+- USDC collection;
+- payment receipt events;
+- separate admin and treasury roles;
+- two-step admin transfer;
+- two-step treasury transfer;
+- pause/unpause payment collection;
+- treasury-only partial/full withdrawal;
+- total collected / withdrawn accounting.
 
-A valid proof uses this protocol shape:
+The Arc admin cannot change `.gen` ownership or authenticity verdicts. The treasury cannot change pricing or protocol administration.
 
-```json
-{
-  "protocol": "gns-claim-v2",
-  "namespace": "meritra.gen",
-  "wallet": "0x...",
-  "registry": "0x...",
-  "authenticity_contract": "0x...",
-  "claim_id": "7",
-  "challenge": "claim-specific-nonce",
-  "policy_version": "gns-auth-v2",
-  "issued_at": 1787730000,
-  "expires_at": 1787733600
-}
-```
+### `contracts/GNSRegistry.py`
 
-A successful HTTPS request is not ownership proof. The attestation must match the current namespace owner, namespace, configured registry, authenticity contract, claim id, nonce, policy version, and freshness window.
+GenLayer deterministic namespace registry.
 
-The attestation must also be fetched from a source authorized by the namespace's current registry records:
+Responsibilities:
 
-- a path beneath the registered website;
-- a path beneath the registered agent endpoint; or
-- the registered GitHub repository / matching `raw.githubusercontent.com` repository path.
+- `.gen` ownership and expiry;
+- records and primary addresses;
+- reverse lookup;
+- transfers and subnames;
+- reports;
+- Arc receipt verification and one-time consumption;
+- registration pause;
+- two-step GenLayer admin transfer.
 
-A copied JSON document on an unrelated host does not count as ownership proof.
+The v3 registry has no commercial GEN price, no payable registration path and no GEN treasury withdrawal path.
 
-## Challenge lifecycle and burden of proof
+### `contracts/GNSAuthenticity.py`
 
-1. Anyone can challenge the latest currently verified claim with a typed reason and retrievable evidence.
-2. Opening a challenge records `challenge_status = OPEN`, but **does not erase the existing finalized `VERIFIED` status**. An allegation is not a revocation.
-3. `resolve_challenge()` re-fetches both the claimant's original evidence and the challenger's evidence inside the verdict transaction.
-4. If the registry owner or identity-bound registry state changed, the claim can be revoked deterministically because the verified subject itself changed.
-5. If the claimant's previously valid attestation can no longer be validated, the result is `STALE`, not “fraud proven.” Fresh proof is required before authenticity can remain authoritative.
-6. Otherwise validators decide `UPHOLD`, `REVOKE`, or `INSUFFICIENT_EVIDENCE` from the fresh two-sided corpus.
-7. Only a finalized `REVOKE` replaces the authoritative verification with a revoked state. A weak or inconclusive challenge does not strip an existing verification.
+GenLayer evidence-grounded trust layer.
 
-The contract never resolves a dispute from a submitted URL string alone, and a challenger cannot downgrade a verified identity merely by opening a challenge or submitting weak evidence.
+Registration proves namespace ownership only. It does **not** prove the real-world identity/project represented by a namespace.
 
-## Verification binding and invalidation
+Authenticity v2 adds:
 
-Every claim stores a subject hash over:
+- claim-specific nonce;
+- wallet-controlled public attestation;
+- subject hash binding to current registry owner/records/policy;
+- evidence retrieval inside every verdict-bearing path;
+- GitHub/website source binding;
+- bounded attestation freshness;
+- fail-closed malformed model output;
+- validator comparison of decision-critical fields;
+- challenge burden-of-proof semantics that do not let weak challenges erase a VERIFIED state.
 
-- namespace;
-- configured registry address;
-- current registry owner;
-- primary address;
-- registered website;
-- registered GitHub;
-- registered X record;
-- registered agent endpoint;
-- policy version.
+See [`docs/authenticity-v2.md`](docs/authenticity-v2.md).
 
-A verification is not transferable. If the namespace owner or identity-relevant records change, the effective authenticity status becomes `STALE` until a fresh claim is verified.
+## Authority model
 
-Attestations are also time-bounded. The current policy caps an attestation at seven days, and an expired proof cannot remain permanently verified.
+There is intentionally no omnipotent admin.
 
-## Consensus design
+| Role | Can do | Cannot do |
+| --- | --- | --- |
+| GenLayer registry admin | pause new registrations, propose registry admin, moderate deterministic reports/flags | withdraw Arc USDC, manufacture authenticity verdicts |
+| Arc router admin | set prices, pause payments, propose Arc admin/treasury | modify `.gen` ownership, withdraw treasury funds unless also treasury |
+| Arc treasury | withdraw collected USDC, accept a proposed treasury role | change prices, namespaces, authenticity or admins |
+| Namespace owner | manage owned namespace and create authenticity claim | change protocol pricing/treasury/admin |
+| GenLayer authenticity consensus | adjudicate evidence-grounded authenticity/challenges | take custody of Arc USDC |
 
-`verify_claim()` and `resolve_challenge()` use explicit nondeterministic leader/validator execution.
+Admin and treasury transfers are two-step proposals requiring acceptance by the destination wallet.
 
-Before entering nondeterministic execution, the contract snapshots all required deterministic contract state. Each validator then independently:
+## Frontend
 
-1. fetches the evidence sources with `gl.nondet.web.request`;
-2. rejects failed HTTP responses for proof purposes;
-3. validates source authorization and attestation binding;
-4. performs deterministic owner / subject / freshness checks;
-5. evaluates only the genuinely subjective identity question with an LLM;
-6. independently reproduces the structured outcome.
+Next.js 15 frontend with no separately hosted application backend.
 
-The equivalence check compares the fields that can alter authoritative trust state:
+Paid actions expose the actual cross-chain lifecycle:
 
-- `decision`;
-- `evidence_expires_at`.
+> **Pay on Arc → Finalize on GenLayer**
 
-It deliberately does **not** require volatile webpage bytes or free-form explanation text to match exactly. Evidence digests and reason text remain verdict provenance from the accepted leader result; they are not presented as validator-identical web snapshots.
+The Arc receipt is stored only as resumable browser state; GenLayer still independently verifies it from Arc RPC.
 
-Prompts explicitly treat claimant text and fetched web content as untrusted data to reduce prompt-injection risk.
+Operational controls at `/ops-gns` are also split by on-chain role. UI access checks are convenience only; contract permissions remain authoritative.
 
-## Authoritative vs legacy paths
+## Local configuration
 
-`contracts/GNSRegistry.py` remains the registry substrate and still contains earlier experimental AI review methods for backward compatibility. Those methods are deprecated for trust decisions in this branch.
-
-The v2 frontend does not expose the legacy positive-verification or report-review writes. Authoritative authenticity comes only from `GNSAuthenticity` verdicts that are finalized and executed successfully.
-
-The advisory `ai_suggest_names` feature may remain because it cannot mutate authenticity, disputes, ownership, or protocol funds.
-
-## Frontend changes
-
-The v2 product flow separates registry ownership from authenticity:
-
-- public profiles show **Registry ownership** separately from **Authenticity**;
-- the old generic “paste a URL and run AI verification” flow has been removed;
-- owners create a claim, copy the exact attestation JSON, publish it, then request verification;
-- authoritative writes wait for `FINALIZED` and verify the receipt execution result rather than treating finality alone as success;
-- disputes use the dedicated claim/challenge lifecycle and show finalized verdict provenance;
-- a pending challenge is disclosed without erasing the prior verified badge before adjudication.
-
-## Repository structure
-
-```text
-contracts/
-  GNSRegistry.py                 Existing deterministic namespace substrate
-  GNSAuthenticity.py             Evidence-grounded GenLayer adjudication contract
-
-tests/direct/
-  test_authenticity_security.py  Adversarial proof-model and state-transition tests
-
-scripts/
-  deploy-gns.mjs                 Registry deployment helper
-  deploy-authenticity.mjs        Authenticity contract deployment helper
-  smoke-gns.mjs                  Legacy registry smoke test
-  smoke-authenticity.mjs         Authenticity inspection / lifecycle helper
-
-src/lib/gns/
-  contract.ts                    Registry client; no authoritative legacy AI writes
-  authenticity.ts                FINALIZED authenticity client
-  authenticity-types.ts          Claim / challenge / verdict types
-```
-
-See [`docs/authenticity-v2.md`](./docs/authenticity-v2.md) for the full security model and reviewer-feedback mapping.
-
-## Environment
+Copy `.env.example` to `.env.local` and fill the deployed addresses:
 
 ```bash
-NEXT_PUBLIC_GNS_CONTRACT_ADDRESS=<active registry address>
-NEXT_PUBLIC_GNS_AUTHENTICITY_CONTRACT_ADDRESS=<deployed authenticity address>
-NEXT_PUBLIC_GENLAYER_RPC_URL=https://studio.genlayer.com/api
-NEXT_PUBLIC_CHAIN_NAME=studionet
-NEXT_PUBLIC_CHAIN_ID=61999
-NEXT_PUBLIC_EXPLORER_URL=https://explorer-studio.genlayer.com/
+NEXT_PUBLIC_GNS_CONTRACT_ADDRESS=
+NEXT_PUBLIC_GNS_AUTHENTICITY_CONTRACT_ADDRESS=
+NEXT_PUBLIC_ARC_PAYMENT_ROUTER_ADDRESS=
 ```
 
-## Local development
+Network defaults are already provided for Studionet and Arc Testnet.
+
+Never commit private keys, seed phrases, keystore passwords or `.env.local`.
+
+## Build and test
+
+### GenLayer
 
 ```bash
-npm install
-npm run dev
-```
-
-## Validation
-
-Branch CI runs:
-
-```bash
+pip install -r requirements-dev.txt
+genvm-lint check contracts/GNSRegistry.py
 genvm-lint check contracts/GNSAuthenticity.py
-python -m py_compile contracts/GNSAuthenticity.py
+python -m py_compile contracts/GNSRegistry.py contracts/GNSAuthenticity.py
 pytest tests/direct -v
+```
+
+### Arc router
+
+```bash
+forge fmt --check
+forge build --sizes
+forge test -vvv
+```
+
+### Frontend
+
+```bash
 npm ci
+npm audit --audit-level=high
 npm run build
 ```
 
-The Direct Mode suite targets the original reviewer's trust concerns and subsequent hardening cases, including arbitrary-host proofs, wrong-wallet proofs, replayed claim ids/nonces, wrong contract bindings, expired attestations, failed HTTP responses, duplicate evidence URLs, fail-closed model parsing, challenge griefing, stale-proof handling, and consensus comparison of state-bearing expiry.
+The same checks run in GitHub Actions on `v3-arc-usdc`.
 
-CI validates source/runtime compatibility; Studionet deployment and a live claim/challenge lifecycle are tracked separately because they require a funded user-controlled deployer and a claim-specific proof published after claim creation.
+## Deployment order
 
-## Deployment
+Do not deploy the GenLayer registry first. Its Arc payment-router address is immutable by design.
 
-The authenticity contract is deployed against an existing registry address:
+1. Deploy `GNSPaymentRouter` on Arc Testnet using a controlled admin and treasury wallet.
+2. Set `NEXT_PUBLIC_ARC_PAYMENT_ROUTER_ADDRESS` locally.
+3. Deploy fresh `GNSRegistry.py`; constructor binds the Arc router.
+4. Deploy fresh `GNSAuthenticity.py` against the new registry.
+5. Configure the frontend with all three addresses.
+6. Run a real Arc USDC registration → GenLayer finalization lifecycle.
+7. Set truthful public GitHub evidence on that new namespace.
+8. Run authenticity claim → verification → controlled challenge → challenge resolution.
+9. Record only actually observed addresses, tx hashes, claim IDs and verdicts in the deployment evidence document.
 
-```bash
-npm run deploy:authenticity
-```
+Detailed Arc deployment and smoke procedure: [`docs/arc-usdc.md`](docs/arc-usdc.md).
 
-The deployment helper initializes the GenLayer consensus contract when supported, waits for `FINALIZED`, requires a successful execution result, prefers Studionet's canonical `receipt.data.contract_address`, validates the returned contract address, and writes it to `NEXT_PUBLIC_GNS_AUTHENTICITY_CONTRACT_ADDRESS` in `.env.local`.
+## Deployment status
 
-## Important semantics
+**v3 Arc/USDC architecture is currently implementation/test stage.**
 
-- `.gen` names are protocol-level GNS namespaces, not public DNS TLDs.
-- Name registration means ownership of a registry entry, not real-world identity verification.
-- GNS authenticity is evidence-grounded protocol status, not legal identity, trademark adjudication, or official endorsement by GenLayer.
-- `FINALIZED` is not treated as synonymous with successful execution; authoritative writes require a successful execution result too.
-- A finalized verdict remains inspectable with its claim id, policy version, evidence provenance, expiry, and challenge history.
+The previous v2 registry/authenticity deployments are historical proof for the authenticity recovery branch and are **not** v3 deployment addresses. Do not configure the v3 frontend with an old registry merely to make it appear deployed.
+
+A fresh v3 deployment is required because:
+
+- the registry constructor now binds an Arc router;
+- registration/renewal signatures changed;
+- the old registry commercial model used GEN;
+- final deployment proof must correspond exactly to final reviewed source.
+
+## Reviewer feedback addressed by the architecture
+
+The original authenticity rejection identified three core weaknesses. V2/v3 address them directly:
+
+1. **Stable URL content is not ownership proof.** Authenticity requires a claim-specific, wallet-bound attestation under a registered source.
+2. **Verdict-bearing reviews must fetch cited evidence.** Claim verification and challenge resolution retrieve their evidence inside validator execution.
+3. **A deterministic name service alone is not the GenLayer use case.** Namespace infrastructure is deterministic; GenLayer's differentiated role is live-evidence authenticity/dispute adjudication and independent verification of Arc payment facts before state mutation.
+
+## Branch policy
+
+- `v2-authenticity-adjudication` preserves the audited authenticity-recovery baseline.
+- `v3-arc-usdc` contains the Arc USDC commercial architecture.
+- Do not merge v3 to `main` until final CI, live Arc/GenLayer lifecycle proof and independent audit are complete.
