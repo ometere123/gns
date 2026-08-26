@@ -1,4 +1,4 @@
-# v0.3.0
+# v0.3.1
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
 
 from genlayer import *
@@ -9,7 +9,8 @@ import json
 
 ROOT_SUFFIX = ".gen"
 SECONDS_PER_YEAR = 31536000
-CONTRACT_VERSION = "2.0.0-arc-usdc"
+REGISTRATION_RESERVATION_TTL = 1800
+CONTRACT_VERSION = "2.1.0-arc-usdc-reservations"
 ARC_CHAIN_ID = 5042002
 ARC_RPC_URL = "https://rpc.testnet.arc.network"
 ARC_PAYMENT_EVENT_TOPIC = "0x16246dce28fe193971c235293f898fe6af15aa3539719b24d894793343162838"
@@ -20,11 +21,10 @@ ACTION_RENEW = 2
 class GNSRegistry(gl.Contract):
     """GNS deterministic namespace registry with Arc USDC payment receipts.
 
-    Commercial payments happen on Arc. This contract never receives or prices
-    registrations in GEN. A registration/renewal write accepts an Arc transaction
-    hash + log index, independently retrieves the finalized Arc receipt through
-    GenLayer web access, verifies the configured payment router event, then
-    consumes that receipt exactly once.
+    Commercial payments happen on Arc. A root registration is first reserved on
+    GenLayer, then paid on Arc, then finalized on GenLayer. Validators retrieve
+    the Arc receipt themselves, verify the immutable payment-router event, and
+    consume the receipt exactly once before namespace state changes.
     """
 
     admin: str
@@ -36,6 +36,7 @@ class GNSRegistry(gl.Contract):
     owner_names: TreeMap[str, str]
     reverse_records: TreeMap[str, str]
     parent_subnames: TreeMap[str, str]
+    registration_reservations: TreeMap[str, str]
     reports: TreeMap[str, str]
     ai_reviews: TreeMap[str, str]
     consumed_payments: TreeMap[str, str]
@@ -57,6 +58,7 @@ class GNSRegistry(gl.Contract):
         self.owner_names = TreeMap()
         self.reverse_records = TreeMap()
         self.parent_subnames = TreeMap()
+        self.registration_reservations = TreeMap()
         self.reports = TreeMap()
         self.ai_reviews = TreeMap()
         self.consumed_payments = TreeMap()
@@ -168,9 +170,9 @@ class GNSRegistry(gl.Contract):
 
     def _is_expired_obj(self, obj) -> bool:
         try:
-            return int(obj.get("expires_at", 0)) < self._now()
+            return int(obj.get("expires_at", 0)) <= self._now()
         except Exception:
-            return False
+            return True
 
     def _require_existing_name(self, full_name: str):
         obj = self._get_name_obj(full_name)
@@ -182,6 +184,12 @@ class GNSRegistry(gl.Contract):
         obj = self._require_existing_name(full_name)
         if str(obj.get("owner", "")).lower() != self._sender():
             raise gl.vm.UserError("Only the name owner can perform this action")
+        return obj
+
+    def _require_active_owner(self, full_name: str):
+        obj = self._require_owner(full_name)
+        if self._is_expired_obj(obj):
+            raise gl.vm.UserError("Name is expired")
         return obj
 
     def _require_admin(self) -> None:
@@ -247,6 +255,21 @@ class GNSRegistry(gl.Contract):
             },
         }
 
+    def _active_reservation(self, full_name: str):
+        raw = self.registration_reservations.get(full_name, "")
+        reservation = self._load(raw, None)
+        if reservation is None:
+            return None
+        try:
+            if int(reservation.get("expires_at", 0)) <= self._now():
+                return None
+        except Exception:
+            return None
+        return reservation
+
+    def _clear_reservation(self, full_name: str) -> None:
+        self.registration_reservations[full_name] = ""
+
     def _normalise_tx_hash(self, tx_hash: str) -> str:
         clean = str(tx_hash).strip().lower()
         if len(clean) != 66 or not clean.startswith("0x"):
@@ -295,20 +318,36 @@ class GNSRegistry(gl.Contract):
 
     def _fetch_arc_receipt_consensus(self, tx_hash: str):
         def fetch_stable():
-            receipt = self._rpc_call_nondet(
-                "eth_getTransactionReceipt", [tx_hash]
-            )
-            latest = self._rpc_call_nondet("eth_blockNumber", [])
+            receipt = self._rpc_call_nondet("eth_getTransactionReceipt", [tx_hash])
             if receipt is None:
-                return self._dump({"receipt": None, "latest": str(latest)})
+                return self._dump({"receipt": None})
+
+            stable_logs = []
+            raw_logs = receipt.get("logs", [])
+            if isinstance(raw_logs, list):
+                for log in raw_logs:
+                    if not isinstance(log, dict):
+                        continue
+                    topics = log.get("topics", [])
+                    if not isinstance(topics, list):
+                        topics = []
+                    stable_logs.append(
+                        {
+                            "address": str(log.get("address", "")).lower(),
+                            "logIndex": str(log.get("logIndex", "")).lower(),
+                            "topics": [str(topic).lower() for topic in topics],
+                            "data": str(log.get("data", "")).lower(),
+                        }
+                    )
+
             normalized = {
                 "transactionHash": str(receipt.get("transactionHash", "")).lower(),
                 "status": str(receipt.get("status", "")).lower(),
                 "to": str(receipt.get("to", "")).lower(),
                 "blockNumber": str(receipt.get("blockNumber", "")).lower(),
-                "logs": receipt.get("logs", []),
+                "logs": stable_logs,
             }
-            return self._dump({"receipt": normalized, "latest": str(latest).lower()})
+            return self._dump({"receipt": normalized})
 
         raw = gl.eq_principle.strict_eq(fetch_stable)
         return self._load(str(raw), None)
@@ -336,7 +375,6 @@ class GNSRegistry(gl.Contract):
         receipt = consensus.get("receipt")
         if receipt is None:
             raise gl.vm.UserError("Arc transaction receipt not found")
-
         if str(receipt.get("transactionHash", "")).lower() != tx_hash:
             raise gl.vm.UserError("Arc receipt transaction hash mismatch")
         if self._hex_int(str(receipt.get("status", "0x0"))) != 1:
@@ -345,9 +383,8 @@ class GNSRegistry(gl.Contract):
             raise gl.vm.UserError("Arc transaction did not call the configured payment router")
 
         block_number = self._hex_int(str(receipt.get("blockNumber", "0x0")))
-        latest_block = self._hex_int(str(consensus.get("latest", "0x0")))
-        if block_number <= 0 or latest_block < block_number:
-            raise gl.vm.UserError("Arc payment has not reached deterministic finality")
+        if block_number <= 0:
+            raise gl.vm.UserError("Arc payment receipt is not finalized")
 
         selected = None
         for log in receipt.get("logs", []):
@@ -376,7 +413,7 @@ class GNSRegistry(gl.Contract):
         event_action = self._hex_int(str(topics[3]))
 
         data = str(selected.get("data", "")).lower()
-        if not data.startswith("0x") or len(data) < 2 + 128:
+        if not data.startswith("0x") or len(data) != 130:
             raise gl.vm.UserError("Malformed Arc payment event data")
         body = data[2:]
         try:
@@ -443,9 +480,20 @@ class GNSRegistry(gl.Contract):
                 "rpc_url": ARC_RPC_URL,
                 "router": str(self.arc_payment_router).lower(),
                 "event_topic": ARC_PAYMENT_EVENT_TOPIC,
+                "deterministic_finality": True,
+                "reservation_ttl_seconds": REGISTRATION_RESERVATION_TTL,
                 "registrations_paused": bool(self.registrations_paused),
             }
         )
+
+    @gl.public.view
+    def get_registration_reservation(self, label_or_name: str) -> str:
+        reservation = self._active_reservation(
+            self._normalise_full_name(label_or_name)
+        )
+        if reservation is None:
+            return "{}"
+        return self._dump(reservation)
 
     @gl.public.view
     def get_total_payments_consumed(self) -> u256:
@@ -493,7 +541,13 @@ class GNSRegistry(gl.Contract):
 
     @gl.public.view
     def reverse_lookup(self, address: str) -> str:
-        return self.reverse_records.get(str(address).strip().lower(), "")
+        full_name = self.reverse_records.get(str(address).strip().lower(), "")
+        if full_name == "":
+            return ""
+        obj = self._get_name_obj(full_name)
+        if obj is None or self._is_expired_obj(obj):
+            return ""
+        return full_name
 
     @gl.public.view
     def get_records(self, label_or_name: str) -> str:
@@ -537,8 +591,68 @@ class GNSRegistry(gl.Contract):
         return self.ai_reviews.get(str(review_id), "{}")
 
     # ------------------------------------------------------------------
-    # paid lifecycle: Arc USDC proof -> GenLayer state
+    # registration reservation -> Arc USDC -> GenLayer finalization
     # ------------------------------------------------------------------
+
+    @gl.public.write
+    def reserve_registration(
+        self,
+        label: str,
+        years: u256,
+        primary_address: str,
+    ) -> str:
+        if self.registrations_paused:
+            raise gl.vm.UserError("New registrations are paused")
+
+        clean_label = self._strip_root_suffix(label)
+        if not self._is_valid_root_label(clean_label):
+            raise gl.vm.UserError("Invalid name label")
+        if years < u256(1) or years > u256(5):
+            raise gl.vm.UserError("Registration duration must be between 1 and 5 years")
+
+        full_name = clean_label + ROOT_SUFFIX
+        existing = self._get_name_obj(full_name)
+        if existing is not None and not self._is_expired_obj(existing):
+            raise gl.vm.UserError("Name is not available")
+
+        clean_primary = self._clean_address(primary_address, "primary address")
+        current = self._active_reservation(full_name)
+        if current is not None:
+            current_reserver = str(current.get("reserver", "")).lower()
+            if current_reserver != self._sender():
+                raise gl.vm.UserError("Name is temporarily reserved by another wallet")
+            if (
+                int(current.get("years", 0)) == int(years)
+                and str(current.get("primary_address", "")).lower() == clean_primary
+            ):
+                return self._success("Registration already reserved", current)
+            raise gl.vm.UserError(
+                "Cancel the current reservation before changing registration terms"
+            )
+
+        now = self._now()
+        reservation = {
+            "namespace": full_name,
+            "reserver": self._sender(),
+            "years": int(years),
+            "primary_address": clean_primary,
+            "created_at": now,
+            "expires_at": now + REGISTRATION_RESERVATION_TTL,
+        }
+        self.registration_reservations[full_name] = self._dump(reservation)
+        return self._success("Registration reserved", reservation)
+
+    @gl.public.write
+    def cancel_registration_reservation(self, label_or_name: str) -> str:
+        full_name = self._normalise_full_name(label_or_name)
+        raw = self.registration_reservations.get(full_name, "")
+        reservation = self._load(raw, None)
+        if reservation is None:
+            return self._success("No registration reservation exists", {})
+        if str(reservation.get("reserver", "")).lower() != self._sender():
+            raise gl.vm.UserError("Only the reserver can cancel this reservation")
+        self._clear_reservation(full_name)
+        return self._success("Registration reservation cancelled", {})
 
     @gl.public.write
     def register(
@@ -564,6 +678,16 @@ class GNSRegistry(gl.Contract):
             raise gl.vm.UserError("Name is not available")
 
         clean_primary = self._clean_address(primary_address, "primary address")
+        reservation = self._active_reservation(full_name)
+        if reservation is None:
+            raise gl.vm.UserError("Create or refresh a GenLayer registration reservation first")
+        if str(reservation.get("reserver", "")).lower() != self._sender():
+            raise gl.vm.UserError("Registration reservation belongs to another wallet")
+        if int(reservation.get("years", 0)) != int(years):
+            raise gl.vm.UserError("Registration duration does not match the reservation")
+        if str(reservation.get("primary_address", "")).lower() != clean_primary:
+            raise gl.vm.UserError("Primary address does not match the reservation")
+
         payment = self._verify_arc_payment(
             full_name, int(years), ACTION_REGISTER, arc_tx_hash, int(arc_log_index)
         )
@@ -582,17 +706,22 @@ class GNSRegistry(gl.Contract):
             payment,
         )
 
+        was_new = existing is None
         if existing is not None:
             old_owner = str(existing.get("owner", "")).lower()
+            old_primary = str(existing.get("primary_address", "")).lower()
             if old_owner != "":
                 self._remove_owner_name(old_owner, full_name)
+            if old_primary != "" and self.reverse_records.get(old_primary, "") == full_name:
+                self.reverse_records[old_primary] = ""
 
         self._consume_payment(payment)
         self._save_name_obj(full_name, obj)
         self._add_owner_name(owner, full_name)
-        if self.reverse_records.get(clean_primary, "") == "":
-            self.reverse_records[clean_primary] = full_name
-        self.name_counter += u256(1)
+        self.reverse_records[clean_primary] = full_name
+        self._clear_reservation(full_name)
+        if was_new:
+            self.name_counter += u256(1)
 
         return self._success("Name registered from finalized Arc USDC payment", obj)
 
@@ -609,6 +738,11 @@ class GNSRegistry(gl.Contract):
 
         full_name = self._normalise_full_name(label_or_name)
         obj = self._require_owner(full_name)
+        if self._is_expired_obj(obj):
+            reservation = self._active_reservation(full_name)
+            if reservation is not None and str(reservation.get("reserver", "")).lower() != self._sender():
+                raise gl.vm.UserError("Expired name is reserved for a new registrant")
+
         payment = self._verify_arc_payment(
             full_name, int(years), ACTION_RENEW, arc_tx_hash, int(arc_log_index)
         )
@@ -633,7 +767,7 @@ class GNSRegistry(gl.Contract):
     @gl.public.write
     def transfer(self, label_or_name: str, new_owner: str) -> str:
         full_name = self._normalise_full_name(label_or_name)
-        obj = self._require_owner(full_name)
+        obj = self._require_active_owner(full_name)
         clean_new_owner = self._clean_address(new_owner, "new owner")
         old_owner = str(obj.get("owner", "")).lower()
         obj["owner"] = clean_new_owner
@@ -645,7 +779,7 @@ class GNSRegistry(gl.Contract):
     @gl.public.write
     def set_primary_address(self, label_or_name: str, address: str) -> str:
         full_name = self._normalise_full_name(label_or_name)
-        obj = self._require_owner(full_name)
+        obj = self._require_active_owner(full_name)
         clean = self._clean_address(address, "primary address")
         old = str(obj.get("primary_address", "")).lower()
         obj["primary_address"] = clean
@@ -658,7 +792,7 @@ class GNSRegistry(gl.Contract):
     @gl.public.write
     def set_primary_name(self, label_or_name: str) -> str:
         full_name = self._normalise_full_name(label_or_name)
-        self._require_owner(full_name)
+        self._require_active_owner(full_name)
         self.reverse_records[self._sender()] = full_name
         return self._success(
             "Primary name set", {"address": self._sender(), "name": full_name}
@@ -667,7 +801,7 @@ class GNSRegistry(gl.Contract):
     @gl.public.write
     def set_records(self, label_or_name: str, records_json: str) -> str:
         full_name = self._normalise_full_name(label_or_name)
-        obj = self._require_owner(full_name)
+        obj = self._require_active_owner(full_name)
         incoming = self._load(records_json, None)
         if incoming is None or not isinstance(incoming, dict):
             raise gl.vm.UserError("Records must be a JSON object")
@@ -688,7 +822,7 @@ class GNSRegistry(gl.Contract):
     @gl.public.write
     def clear_record(self, label_or_name: str, key: str) -> str:
         full_name = self._normalise_full_name(label_or_name)
-        obj = self._require_owner(full_name)
+        obj = self._require_active_owner(full_name)
         if not self._allowed_record_key(key):
             raise gl.vm.UserError("Unsupported record key")
         records = obj.get("records", self._empty_records())
@@ -702,15 +836,14 @@ class GNSRegistry(gl.Contract):
         self, parent_name: str, sub_label: str, primary_address: str
     ) -> str:
         parent = self._normalise_full_name(parent_name)
-        parent_obj = self._require_owner(parent)
-        if self._is_expired_obj(parent_obj):
-            raise gl.vm.UserError("Parent name is expired")
+        parent_obj = self._require_active_owner(parent)
 
         clean_sub = str(sub_label).strip().lower()
         if not self._is_valid_sub_label(clean_sub):
             raise gl.vm.UserError("Invalid subname label")
         full_subname = clean_sub + "." + parent
-        if self._get_name_obj(full_subname) is not None:
+        existing = self._get_name_obj(full_subname)
+        if existing is not None and not self._is_expired_obj(existing):
             raise gl.vm.UserError("Subname already exists")
 
         clean_primary = self._clean_address(primary_address, "primary address")
@@ -727,16 +860,27 @@ class GNSRegistry(gl.Contract):
             int(parent_obj.get("expires_at", now)),
             {"type": "parent-grant", "parent": parent},
         )
+
+        was_new = existing is None
+        if existing is not None:
+            old_owner = str(existing.get("owner", "")).lower()
+            old_primary = str(existing.get("primary_address", "")).lower()
+            if old_owner != "":
+                self._remove_owner_name(old_owner, full_subname)
+            if old_primary != "" and self.reverse_records.get(old_primary, "") == full_subname:
+                self.reverse_records[old_primary] = ""
+
         self._save_name_obj(full_subname, obj)
         self._add_owner_name(owner, full_subname)
         self._add_subname_to_parent(parent, full_subname)
-        self.name_counter += u256(1)
+        if was_new:
+            self.name_counter += u256(1)
         return self._success("Subname created", obj)
 
     @gl.public.write
     def transfer_subname(self, subname: str, new_owner: str) -> str:
         full_name = self._normalise_full_name(subname)
-        obj = self._require_owner(full_name)
+        obj = self._require_active_owner(full_name)
         if not bool(obj.get("is_subname", False)):
             raise gl.vm.UserError("This method is only for subnames")
         clean_new_owner = self._clean_address(new_owner, "new owner")

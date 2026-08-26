@@ -8,11 +8,11 @@ const EXAMPLES = ["builder.gen", "agent.gen", "service.gen", "proof.gen"];
 const FEATURES = [
   {
     title: "Readable ownership",
-    desc: "Resolve a .gen namespace to its current owner, primary address and public records.",
+    desc: "Resolve a .gen namespace to its current owner, primary address and public records on GenLayer.",
   },
   {
     title: "Arc USDC payments",
-    desc: "Registration and renewal are paid in USDC on Arc, where USDC is also the gas asset.",
+    desc: "Registration and renewal are paid in USDC on Arc while namespace state remains on GenLayer.",
   },
   {
     title: "Evidence-grounded authenticity",
@@ -60,7 +60,7 @@ export default function HomePage() {
             <div className="rounded-xl border border-borderGrey bg-white p-4">
               <div className="flex items-center justify-between gap-3">
                 <h3 className="font-semibold text-ink">Namespace ownership</h3>
-                <Badge tone="green">Deterministic</Badge>
+                <Badge tone="green">GenLayer</Badge>
               </div>
               <p className="mt-2 text-sm text-muted">
                 Who currently owns the .gen name and what records they published.
@@ -96,11 +96,12 @@ export default function HomePage() {
 
       <section>
         <h2 className="text-2xl font-semibold text-ink">Register a name</h2>
-        <div className="mt-6 grid gap-4 sm:grid-cols-3">
+        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {[
             { n: "1", t: "Search", d: "Choose an available canonical .gen namespace." },
-            { n: "2", t: "Pay on Arc", d: "Pay the router in USDC. The resulting receipt is bound to your namespace and duration." },
-            { n: "3", t: "Finalize on GenLayer", d: "Validators independently verify and consume the Arc receipt before ownership changes." },
+            { n: "2", t: "Reserve on GenLayer", d: "Create a short wallet-bound reservation before any USDC leaves your wallet." },
+            { n: "3", t: "Pay on Arc", d: "Pay the Arc router in USDC. The receipt is bound to the namespace and duration." },
+            { n: "4", t: "Finalize on GenLayer", d: "Validators independently verify and consume the Arc receipt before ownership is created." },
           ].map((step) => (
             <Card key={step.n}>
               <span className="text-xs font-semibold text-primary">STEP {step.n}</span>

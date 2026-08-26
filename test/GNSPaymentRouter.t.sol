@@ -41,11 +41,10 @@ contract Actor {
         require(token.approve(spender, amount), "approve");
     }
 
-    function payRegistration(
-        GNSPaymentRouter router,
-        string calldata name,
-        uint16 durationYears
-    ) external returns (uint256) {
+    function payRegistration(GNSPaymentRouter router, string calldata name, uint16 durationYears)
+        external
+        returns (uint256)
+    {
         return router.payRegistration(name, durationYears);
     }
 
@@ -88,11 +87,7 @@ contract GNSPaymentRouterTest {
         nextAdmin = new Actor();
         nextTreasury = new Actor();
         router = new GNSPaymentRouter(
-            address(token),
-            address(this),
-            address(this),
-            5 * ONE_USDC,
-            3 * ONE_USDC
+            address(token), address(this), address(this), 5 * ONE_USDC, 3 * ONE_USDC
         );
 
         token.mint(address(payer), 100 * ONE_USDC);
@@ -115,26 +110,22 @@ contract GNSPaymentRouterTest {
 
     function testPauseBlocksPayments() public {
         router.setPaused(true);
-        (bool ok,) = address(payer).call(
-            abi.encodeWithSelector(
-                Actor.payRegistration.selector,
-                router,
-                "papito.gen",
-                uint16(1)
-            )
-        );
+        (bool ok,) = address(payer)
+            .call(
+                abi.encodeWithSelector(
+                    Actor.payRegistration.selector, router, "papito.gen", uint16(1)
+                )
+            );
         require(!ok, "paused payment succeeded");
     }
 
     function testInvalidNamespaceRejected() public {
-        (bool ok,) = address(payer).call(
-            abi.encodeWithSelector(
-                Actor.payRegistration.selector,
-                router,
-                "Papito.gen",
-                uint16(1)
-            )
-        );
+        (bool ok,) = address(payer)
+            .call(
+                abi.encodeWithSelector(
+                    Actor.payRegistration.selector, router, "Papito.gen", uint16(1)
+                )
+            );
         require(!ok, "invalid namespace accepted");
     }
 
@@ -143,13 +134,12 @@ contract GNSPaymentRouterTest {
         require(router.registrationPricePerYear() == 7 * ONE_USDC, "registration price");
         require(router.renewalPricePerYear() == 4 * ONE_USDC, "renewal price");
 
-        (bool ok,) = address(payer).call(
-            abi.encodeWithSelector(
-                GNSPaymentRouter.setPrices.selector,
-                1 * ONE_USDC,
-                1 * ONE_USDC
-            )
-        );
+        (bool ok,) = address(payer)
+            .call(
+                abi.encodeWithSelector(
+                    GNSPaymentRouter.setPrices.selector, 1 * ONE_USDC, 1 * ONE_USDC
+                )
+            );
         require(!ok, "non-admin changed prices");
     }
 
@@ -169,18 +159,14 @@ contract GNSPaymentRouterTest {
 
         uint256 beforeBalance = token.balanceOf(address(nextTreasury));
         nextTreasury.withdraw(router, 2 * ONE_USDC);
-        require(
-            token.balanceOf(address(nextTreasury)) == beforeBalance + 2 * ONE_USDC,
-            "withdraw"
-        );
+        require(token.balanceOf(address(nextTreasury)) == beforeBalance + 2 * ONE_USDC, "withdraw");
         require(router.totalWithdrawn() == 2 * ONE_USDC, "withdraw accounting");
     }
 
     function testNonTreasuryCannotWithdraw() public {
         payer.payRegistration(router, "papito.gen", 1);
-        (bool ok,) = address(payer).call(
-            abi.encodeWithSelector(Actor.withdraw.selector, router, 1 * ONE_USDC)
-        );
+        (bool ok,) = address(payer)
+            .call(abi.encodeWithSelector(Actor.withdraw.selector, router, 1 * ONE_USDC));
         require(!ok, "non-treasury withdrew");
     }
 
@@ -193,9 +179,8 @@ contract GNSPaymentRouterTest {
     }
 
     function testQuoteRejectsInvalidYears() public {
-        (bool ok,) = address(router).call(
-            abi.encodeWithSelector(GNSPaymentRouter.quoteRegistration.selector, uint16(0))
-        );
+        (bool ok,) = address(router)
+            .call(abi.encodeWithSelector(GNSPaymentRouter.quoteRegistration.selector, uint16(0)));
         require(!ok, "zero years accepted");
     }
 }

@@ -45,7 +45,9 @@ contract GNSPaymentRouter {
     event PauseUpdated(bool paused);
     event AdminTransferProposed(address indexed currentAdmin, address indexed pendingAdmin);
     event AdminTransferred(address indexed previousAdmin, address indexed newAdmin);
-    event TreasuryTransferProposed(address indexed currentTreasury, address indexed pendingTreasury);
+    event TreasuryTransferProposed(
+        address indexed currentTreasury, address indexed pendingTreasury
+    );
     event TreasuryTransferred(address indexed previousTreasury, address indexed newTreasury);
     event TreasuryWithdrawal(address indexed treasury, uint256 amount);
 
@@ -111,12 +113,7 @@ contract GNSPaymentRouter {
         nonReentrant
         returns (uint256 amount)
     {
-        return _pay(
-            normalizedNamespace,
-            durationYears,
-            ACTION_REGISTER,
-            registrationPricePerYear
-        );
+        return _pay(normalizedNamespace, durationYears, ACTION_REGISTER, registrationPricePerYear);
     }
 
     function payRenewal(string calldata normalizedNamespace, uint16 durationYears)
@@ -222,11 +219,7 @@ contract GNSPaymentRouter {
         paymentCount += 1;
 
         emit PaymentRecorded(
-            msg.sender,
-            sha256(bytes(normalizedNamespace)),
-            action,
-            durationYears,
-            amount
+            msg.sender, sha256(bytes(normalizedNamespace)), action, durationYears, amount
         );
     }
 
@@ -243,8 +236,7 @@ contract GNSPaymentRouter {
         if (b.length < 7 || b.length > 36) revert InvalidNamespace();
         uint256 suffix = b.length - 4;
         if (
-            b[suffix] != "." || b[suffix + 1] != "g" || b[suffix + 2] != "e"
-                || b[suffix + 3] != "n"
+            b[suffix] != "." || b[suffix + 1] != "g" || b[suffix + 2] != "e" || b[suffix + 3] != "n"
         ) revert InvalidNamespace();
         if (suffix < 3 || suffix > 32) revert InvalidNamespace();
 

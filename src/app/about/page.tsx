@@ -4,35 +4,39 @@ import { Badge } from "@/components/Badge";
 const FAQ = [
   {
     q: "What is GNS?",
-    a: "GNS is the GenLayer Naming Service, a protocol-level naming layer for the GenLayer ecosystem. It maps human-readable .gen names to wallets, contracts, AI agents, and project records.",
+    a: "GNS is a .gen namespace, authenticity and dispute protocol. Deterministic namespace state lives on GenLayer, commercial registration/renewal fees are paid in USDC on Arc, and GenLayer adjudicates evidence-grounded authenticity claims.",
   },
   {
-    q: "What is a .gen name?",
-    a: "A .gen name is a readable handle registered on the GNS contract. Examples include papito.gen and bountylens.gen.",
+    q: "What does registering a .gen name prove?",
+    a: "Registration proves control of that namespace in the GNS registry. It does not by itself prove a real-world person, organization, project or brand relationship.",
+  },
+  {
+    q: "How do payments work?",
+    a: "You pay USDC to the GNS payment router on Arc. GenLayer validators then independently fetch and verify that finalized Arc receipt before the registry consumes it and creates or renews the namespace.",
+  },
+  {
+    q: "Why Arc?",
+    a: "Arc uses USDC as its gas asset, so the same asset used to pay GNS also covers the Arc transaction fee. GNS does not require a separate commercial GEN-denominated price.",
+  },
+  {
+    q: "How does authenticity work?",
+    a: "The namespace owner creates a separate claim whose subject is bound to current registry state. Validators retrieve public evidence inside the verdict path and require a claim-specific wallet attestation hosted under a registered public source such as a controlled GitHub repository.",
+  },
+  {
+    q: "Can a challenge instantly remove verification?",
+    a: "No. Opening a challenge records an open dispute without erasing the prior authoritative VERIFIED state. Only a finalized resolution can revoke or stale that verification under the policy.",
   },
   {
     q: "What can I attach to a name?",
-    a: "Avatar, website, X, GitHub, Discord, email, contract address, AI agent endpoint, and a short description.",
+    a: "Avatar, website, X, GitHub, Discord, email, contract address, agent endpoint and a short description. Only publish records you actually control or intend to represent.",
   },
   {
     q: "What are subnames?",
-    a: "Subnames are scoped names beneath your root, like pay.papito.gen. They share the parent's expiry.",
+    a: "Subnames are deterministic names beneath a root, such as agent.builder.gen. They inherit the parent's expiry and do not require a separate Arc commercial payment in v3.",
   },
   {
-    q: "What is reverse lookup?",
-    a: "Given an address, GNS returns its primary .gen name so apps can show your name instead of a hex address.",
-  },
-  {
-    q: "What is an AI agent identity?",
-    a: "A subname dedicated to an AI agent endpoint, so other services can verify which agent they are talking to.",
-  },
-  {
-    q: "What happens when a name expires?",
-    a: "Expired names become available again. Renew before expiry to keep your records intact.",
-  },
-  {
-    q: "Is .gen a real DNS domain?",
-    a: "No. GNS names are protocol-level names for the GenLayer ecosystem. They are not public DNS domains unless later connected to DNS or browser infrastructure.",
+    q: "Is .gen a DNS domain?",
+    a: "No. .gen is a protocol namespace. It does not give DNS ownership and GNS does not require users to own a web domain; a controlled public GitHub repository can serve as an authenticity evidence source.",
   },
 ];
 
@@ -40,24 +44,24 @@ export default function AboutPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-8">
       <div>
-        <Badge>Docs</Badge>
+        <Badge>Protocol</Badge>
         <h1 className="mt-3 text-3xl font-semibold text-ink">About GNS</h1>
         <p className="mt-2 text-sm text-muted">
-          Readable names for the intelligent contract economy. Register .gen names for wallets, contracts, AI agents, and apps on GenLayer.
+          GNS separates payment, namespace ownership and authenticity instead of treating them as the same fact.
         </p>
       </div>
       <div className="space-y-4">
-        {FAQ.map((f) => (
-          <Card key={f.q}>
-            <h3 className="font-semibold text-ink">{f.q}</h3>
-            <p className="mt-2 text-sm text-muted">{f.a}</p>
+        {FAQ.map((item) => (
+          <Card key={item.q}>
+            <h3 className="font-semibold text-ink">{item.q}</h3>
+            <p className="mt-2 text-sm text-muted">{item.a}</p>
           </Card>
         ))}
       </div>
       <Card padding="lg" className="bg-softblue/40">
-        <h3 className="font-semibold text-ink">Limitations</h3>
+        <h3 className="font-semibold text-ink">Trust boundary</h3>
         <p className="mt-2 text-sm text-muted">
-          GNS names are protocol-level names for the GenLayer ecosystem. They are not public DNS domains unless later connected to DNS or browser infrastructure. The AI protection layer (impersonation detection, dispute review, project verification) is architected in the contract but not yet enabled in the MVP UI.
+          GNS authenticity is an evidence-grounded protocol verdict, not legal identity, trademark ownership or a guarantee about future behavior. Arc payments buy protocol actions; they never buy a VERIFIED verdict.
         </p>
       </Card>
     </div>

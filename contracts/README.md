@@ -1,29 +1,37 @@
-# GNS Contract
+# GNS GenLayer contracts
 
-`GNSRegistry.py` is the source of truth for the GenLayer Naming Service.
+GNS v3 keeps namespace state and authenticity on GenLayer while using Arc only for USDC payment collection.
 
-Deployed (Studionet): `0x44a224BF67a4fB17a3a0f0585958dCCc1dfA1AD2`
+## `GNSRegistry.py`
 
-Contract version: `1.3.0-web-evidence`
+Version: `2.1.0-arc-usdc-reservations`
 
-See `../docs/deploy-genlayer.md` for the redeploy steps.
+The registry is authoritative for `.gen` ownership, expiry, records, transfers, reverse lookup and subnames.
 
-## Surface (summary)
+Commercial flow:
 
-- View: `is_available`, `resolve`, `resolve_address`, `reverse_lookup`, `get_records`, `get_names_by_owner`, `get_subnames`, `get_report`, `get_total_names`, `get_total_reports`, `get_total_evidence`, `get_web_evidence`, `get_name_status`, `get_ai_status`, `contract_version`.
-- Write: `register`, `renew`, `transfer`, `set_primary_address`, `set_primary_name`, `set_records`, `clear_record`, `create_subname`, `transfer_subname`, `report_name`, `verify_name_url`, `admin_set_report_status`, `admin_flag_name`, `admin_unflag_name`, `admin_transfer_admin`.
-- AI (Equivalence Principle): `ai_review_name`, `ai_review_report`, `ai_verify_project_claim`, `ai_suggest_names`.
+1. reserve an available root namespace on GenLayer;
+2. pay registration or renewal USDC through the configured Arc router;
+3. submit the Arc transaction hash + payment-event log index to GenLayer;
+4. validators fetch that Arc receipt themselves;
+5. the registry validates router, tx success, payer, namespace hash, action, duration and positive amount;
+6. the receipt key is consumed exactly once before namespace state changes.
 
-## Consensus model
+Registration reservations are wallet/namespace/duration/primary-address bound and expire automatically. They prevent the ordinary cross-chain race where two wallets could otherwise pay for the same still-unfinalized name.
 
-- `ai_review_name`, `ai_review_report`, and `ai_verify_project_claim` use `gl.eq_principle.prompt_comparative` because they can affect verification, risk, report status, or name status.
-- `ai_suggest_names` uses `prompt_non_comparative` only as an advisory, non-mutating suggestion tool.
-- `verify_name_url` uses `gl.nondet.web.request` and `gl.eq_principle.strict_eq` to store validator-agreed URL evidence and SHA-256 response hashes.
-- Stored AI review objects include `consensus_method` for auditability.
+The registry has no commercial GEN price, payable registration method or GEN treasury withdrawal path.
 
-## Validation rules
+## `GNSAuthenticity.py`
 
-- Labels: 3–32 chars, lowercase letters / digits / hyphen; hyphen not at edges; no dots.
-- Subnames: 2–32 chars, same alphabet.
-- Records: only the allowed keys; each value ≤ 500 chars.
-- Reports: reason ≤ 80, evidence URL ≤ 300, comment ≤ 700.
+Version: `2.0.0-authenticity-alpha`
+Policy: `gns-auth-v2`
+
+Registration proves namespace ownership only. Authenticity is a separate evidence-grounded GenLayer judgment flow using claim-specific wallet attestations, verdict-path evidence retrieval and challenge resolution.
+
+See `../docs/authenticity-v2.md`.
+
+## Deployment
+
+Historical v2 addresses do not represent this v3 source. Deploy the Arc router first, then a fresh registry bound to that router, then a fresh authenticity contract bound to the new registry.
+
+See `../docs/arc-usdc.md` and `../docs/deploy-genlayer.md`.

@@ -1,4 +1,5 @@
 "use client";
+
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Card } from "./ui/Card";
@@ -6,22 +7,22 @@ import { Badge } from "./Badge";
 import { Button } from "./ui/Button";
 import { AddressText } from "./AddressText";
 import { formatExpiry } from "@/lib/utils";
-import { quoteRegistration, weiToGen } from "@/lib/gns/contract";
+import { formatUsdc, quoteArcRegistration } from "@/lib/arc/client";
 import type { SearchResult } from "@/lib/types";
 
 export function NameStatusCard({ result }: { result: SearchResult }) {
   const { fullName, available, name } = result;
-  const [priceLine, setPriceLine] = useState<string>("Registration price starts at 5 GEN/year");
+  const [priceLine, setPriceLine] = useState<string>("Loading Arc USDC price…");
 
   useEffect(() => {
     if (!available) return;
     let cancelled = false;
-    quoteRegistration(1)
-      .then((wei) => {
-        if (!cancelled) setPriceLine(`Registration price: ${weiToGen(wei)} GEN / year`);
+    quoteArcRegistration(1)
+      .then((amount) => {
+        if (!cancelled) setPriceLine(`Registration price: ${formatUsdc(amount)} USDC / year on Arc`);
       })
       .catch(() => {
-        if (!cancelled) setPriceLine("Price unavailable");
+        if (!cancelled) setPriceLine("Arc registration price unavailable");
       });
     return () => {
       cancelled = true;
@@ -38,9 +39,12 @@ export function NameStatusCard({ result }: { result: SearchResult }) {
               <span className="text-primary">{fullName}</span> is available
             </h2>
             <p className="mt-1 text-sm text-muted">{priceLine}</p>
+            <p className="mt-1 text-xs text-muted">
+              Ownership is created on GenLayer. Arc is only the USDC payment rail.
+            </p>
           </div>
           <Link href={`/register/${encodeURIComponent(fullName.replace(".gen", ""))}`}>
-            <Button size="lg">Register Name</Button>
+            <Button size="lg">Reserve & Register</Button>
           </Link>
         </div>
       </Card>
@@ -88,7 +92,7 @@ export function NameStatusCard({ result }: { result: SearchResult }) {
             <Button variant="secondary">Resolve Address</Button>
           </Link>
           <Link href={`/disputes?name=${encodeURIComponent(fullName)}`}>
-            <Button variant="ghost">Report Impersonation</Button>
+            <Button variant="ghost">Challenge Authenticity</Button>
           </Link>
         </div>
       </div>
