@@ -24,16 +24,32 @@ jobs:
       - name: Install exact lockfile
         run: npm ci
       - name: Apply non-breaking npm security fixes
-        run: npm audit fix
-      - name: Verify patched framework and audit remainder
+        run: npm audit fix || true
+      - name: Pin secure PostCSS for root and Next transitive use
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = 'package.json';
+          const pkg = JSON.parse(fs.readFileSync(path, 'utf8'));
+          pkg.devDependencies = pkg.devDependencies || {};
+          pkg.devDependencies.postcss = '8.5.26';
+          pkg.overrides = pkg.overrides || {};
+          const nextOverride = pkg.overrides.next && typeof pkg.overrides.next === 'object' ? pkg.overrides.next : {};
+          pkg.overrides.next = { ...nextOverride, postcss: '8.5.26' };
+          fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\n');
+          NODE
+          npm install
+      - name: Verify dependency resolution and audit
         shell: bash
         run: |
           node -e 'console.log("NEXT=" + require("next/package.json").version)'
-          node -e 'console.log("ESLINT_CONFIG_NEXT=" + require("eslint-config-next/package.json").version)'
-          npm audit --audit-level=high || true
+          node -e 'console.log("ROOT_POSTCSS=" + require("postcss/package.json").version)'
+          node -e 'try { console.log("NEXT_POSTCSS=" + require("next/node_modules/postcss/package.json").version) } catch { console.log("NEXT_POSTCSS=deduped-to-root") }'
+          npm audit --audit-level=high
       - name: Build
         run: npm run build
-      - name: Commit non-breaking dependency fixes
+      - name: Commit dependency hardening
         shell: bash
         run: |
           git config user.name "papitodele"
@@ -43,5 +59,5 @@ jobs:
             echo "No dependency changes to commit."
             exit 0
           fi
-          git commit -m "fix: apply non-breaking npm security updates"
+          git commit -m "fix: harden frontend dependency tree"
           git push origin HEAD:v2-authenticity-adjudication
