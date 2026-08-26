@@ -2,18 +2,18 @@
 
 // GenLayer client wrapper for the GNS frontend.
 //
-// v1 compatibility:
+// Registry compatibility:
 // - readView/writeMethod keep the existing NEXT_PUBLIC_GNS_CONTRACT_ADDRESS API.
 //
-// v2:
+// Authenticity layer:
 // - readViewAt/writeMethodAt support an explicit contract address.
 // - verdict-bearing writes can require FINALIZED rather than treating ACCEPTED
 //   as an authoritative trust result.
 
 export const GNS_CONTRACT_ADDRESS =
   (process.env.NEXT_PUBLIC_GNS_CONTRACT_ADDRESS || "").trim();
-export const GNS_V2_CONTRACT_ADDRESS =
-  (process.env.NEXT_PUBLIC_GNS_V2_CONTRACT_ADDRESS || "").trim();
+export const GNS_AUTHENTICITY_CONTRACT_ADDRESS =
+  (process.env.NEXT_PUBLIC_GNS_AUTHENTICITY_CONTRACT_ADDRESS || "").trim();
 export const GENLAYER_RPC_URL =
   (process.env.NEXT_PUBLIC_GENLAYER_RPC_URL || "https://studio.genlayer.com/api").trim();
 export const CHAIN_NAME =
@@ -25,8 +25,8 @@ export function isConfigured(): boolean {
   return GNS_CONTRACT_ADDRESS.length > 0;
 }
 
-export function isV2Configured(): boolean {
-  return GNS_V2_CONTRACT_ADDRESS.length > 0;
+export function isAuthenticityConfigured(): boolean {
+  return GNS_AUTHENTICITY_CONTRACT_ADDRESS.length > 0;
 }
 
 type ReceiptStatus = "ACCEPTED" | "FINALIZED";
@@ -169,9 +169,7 @@ async function ensureConnected(client: AnyClient): Promise<void> {
 
 function requireContractAddress(address: string, envName: string): string {
   const clean = address.trim();
-  if (!clean) {
-    throw new Error(`${envName} is not configured.`);
-  }
+  if (!clean) throw new Error(`${envName} is not configured.`);
   return clean;
 }
 
@@ -210,8 +208,7 @@ export async function readView<T = unknown>(
 
 function getConnectedAddress(): string | undefined {
   if (typeof window === "undefined") return undefined;
-  const v = window.localStorage.getItem("gns:address");
-  return v || undefined;
+  return window.localStorage.getItem("gns:address") || undefined;
 }
 
 export async function writeMethodAt(
