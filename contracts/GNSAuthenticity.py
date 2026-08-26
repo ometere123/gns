@@ -350,10 +350,12 @@ class GNSAuthenticity(gl.Contract):
                 )
             decision = str(parsed.get("decision", "")).strip().upper()
             reason_code = str(parsed.get("reason_code", "")).strip().upper()
-            if decision not in allowed:
-                raise ValueError("invalid decision")
-            if reason_code == "" or len(reason_code) > 80:
-                raise ValueError("invalid reason")
+            if decision not in allowed or reason_code == "" or len(reason_code) > 80:
+                return {
+                    "decision": "INSUFFICIENT_EVIDENCE",
+                    "reason_code": fallback_reason,
+                    "summary": "Consensus output did not satisfy the verdict schema.",
+                }
             return {
                 "decision": decision,
                 "reason_code": reason_code,
@@ -365,6 +367,63 @@ class GNSAuthenticity(gl.Contract):
                 "reason_code": fallback_reason,
                 "summary": "Consensus output could not be parsed safely.",
             }
+
+    def _open_challenge_state(self, claim, verification, challenge_id: str):
+        claim["active_challenge_id"] = challenge_id
+        claim["status"] = "CHALLENGED"
+        verification["challenge_id"] = challenge_id
+        verification["challenge_status"] = "OPEN"
+        # Do not overwrite verification["status"]. A challenge is an allegation,
+        # not a revocation. The existing finalized verdict remains authoritative
+        # until a later finalized resolution proves otherwise.
+        return {"claim": claim, "verification": verification}
+
+    def _apply_challenge_resolution_state(
+        self,
+        claim,
+        verification,
+        challenge_id: str,
+        verdict_id: str,
+        decision: str,
+        reason_code: str,
+        evidence_expires_at: int,
+        now_ts: int,
+    ):
+        claim["active_challenge_id"] = ""
+        verification["last_challenge_id"] = challenge_id
+        verification["last_challenge_verdict_id"] = verdict_id
+        verification["challenge_id"] = ""
+        verification["challenge_status"] = decision
+
+        if decision == "REVOKE":
+            claim["status"] = "REVOKED"
+            verification["status"] = "REVOKED"
+            verification["verdict_id"] = verdict_id
+            verification["revoked_at"] = now_ts
+            verification["revocation_reason"] = reason_code
+            verification["evidence_expires_at"] = 0
+        elif decision == "UPHOLD":
+            claim["status"] = "VERIFIED"
+            verification["status"] = "VERIFIED"
+            verification["last_challenge_resolved_at"] = now_ts
+            if evidence_expires_at > 0:
+                verification["evidence_expires_at"] = evidence_expires_at
+        elif reason_code == "CLAIMANT_ATTESTATION_NO_LONGER_VALID":
+            # Loss of fresh claimant proof is staleness, not proof of fraud.
+            claim["status"] = "INSUFFICIENT_EVIDENCE"
+            verification["status"] = "STALE"
+            verification["invalidation_reason"] = reason_code
+            verification["evidence_expires_at"] = 0
+        else:
+            # The challenger did not meet the burden for revocation. Preserve the
+            # prior finalized verification instead of allowing challenge griefing.
+            claim["status"] = "VERIFIED"
+            verification["status"] = "VERIFIED"
+            verification["last_challenge_resolved_at"] = now_ts
+            if evidence_expires_at > 0:
+                verification["evidence_expires_at"] = evidence_expires_at
+
+        return {"claim": claim, "verification": verification}
 
     def _evaluate_claim(
         self,
@@ -524,9 +583,9 @@ class GNSAuthenticity(gl.Contract):
         )
         if int(attestation.get("count", 0)) < 1:
             return {
-                "decision": "REVOKE",
+                "decision": "INSUFFICIENT_EVIDENCE",
                 "reason_code": "CLAIMANT_ATTESTATION_NO_LONGER_VALID",
-                "summary": "The previously verified source-bound wallet attestation is no longer valid.",
+                "summary": "The previously verified source-bound wallet attestation can no longer be validated; freshness must be restored before the identity can remain authoritative.",
                 "evidence_digest": combined_digest,
                 "evidence_expires_at": 0,
             }
@@ -813,6 +872,9 @@ class GNSAuthenticity(gl.Contract):
             raise gl.vm.UserError("Only a verified claim can be challenged")
         if str(claim.get("active_challenge_id", "")) != "":
             raise gl.vm.UserError("Claim already has an active challenge")
+        effective_verification = self._effective_verification(namespace)
+        if str(effective_verification.get("status", "")) != "VERIFIED":
+            raise gl.vm.UserError("Namespace does not have a current verified authenticity state")
 
         clean_reason = str(reason_code).strip().upper()
         if clean_reason not in [
@@ -843,12 +905,12 @@ class GNSAuthenticity(gl.Contract):
             "verdict_id": "",
         }
         self.challenges[challenge_id] = self._dump(challenge)
-        claim["active_challenge_id"] = challenge_id
-        claim["status"] = "CHALLENGED"
+        transition = self._open_challenge_state(
+            claim, effective_verification, challenge_id
+        )
+        claim = transition["claim"]
+        verification = transition["verification"]
         self.claims[str(claim_id)] = self._dump(claim)
-        verification = self._verification_obj(namespace)
-        verification["status"] = "CHALLENGED"
-        verification["challenge_id"] = challenge_id
         self.namespace_verifications[namespace] = self._dump(verification)
         return self._dump({"success": True, "challenge_id": challenge_id})
 
@@ -930,26 +992,19 @@ class GNSAuthenticity(gl.Contract):
         challenge["status"] = decision
         challenge["verdict_id"] = verdict_id
         self.challenges[str(challenge_id)] = self._dump(challenge)
-        claim["active_challenge_id"] = ""
         verification = self._verification_obj(namespace)
-        verification["verdict_id"] = verdict_id
-
-        if decision == "REVOKE":
-            claim["status"] = "REVOKED"
-            verification["status"] = "REVOKED"
-            verification["revoked_at"] = self._now()
-            verification["revocation_reason"] = verdict["reason_code"]
-            verification["evidence_expires_at"] = 0
-        elif decision == "UPHOLD":
-            claim["status"] = "VERIFIED"
-            verification["status"] = "VERIFIED"
-            verification["last_challenge_resolved_at"] = self._now()
-            verification["evidence_expires_at"] = int(
-                verdict.get("evidence_expires_at", 0)
-            )
-        else:
-            claim["status"] = "INSUFFICIENT_EVIDENCE"
-            verification["status"] = "INCONCLUSIVE"
+        transition = self._apply_challenge_resolution_state(
+            claim,
+            verification,
+            str(challenge_id),
+            verdict_id,
+            decision,
+            str(verdict.get("reason_code", "UNKNOWN")),
+            int(verdict.get("evidence_expires_at", 0)),
+            self._now(),
+        )
+        claim = transition["claim"]
+        verification = transition["verification"]
         self.claims[claim_id] = self._dump(claim)
         self.namespace_verifications[namespace] = self._dump(verification)
         return self._dump({"success": True, "verdict": verdict})

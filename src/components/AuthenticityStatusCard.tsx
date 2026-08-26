@@ -95,7 +95,12 @@ export function AuthenticityStatusCard({ fullName }: { fullName: string }) {
             Evidence-grounded status from the dedicated GNS authenticity contract. Registry ownership by itself does not create this status.
           </p>
         </div>
-        <Badge tone={tone(status)}>{status}</Badge>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge tone={tone(status)}>{status}</Badge>
+          {verification?.challenge_status === "OPEN" && (
+            <Badge tone="blue">Challenge pending</Badge>
+          )}
+        </div>
       </div>
 
       {claim && (
@@ -119,6 +124,12 @@ export function AuthenticityStatusCard({ fullName }: { fullName: string }) {
             Evidence digest: {verdict.evidence_digest}
           </p>
         </div>
+      )}
+
+      {verification?.challenge_status === "OPEN" && status === "VERIFIED" && (
+        <p className="text-sm text-muted">
+          A challenge is open, but the prior finalized verification remains authoritative unless a finalized resolution revokes it.
+        </p>
       )}
 
       {verification?.invalidation_reason && status === "STALE" && (

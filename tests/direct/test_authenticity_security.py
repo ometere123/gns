@@ -214,3 +214,84 @@ def test_disallowed_model_decision_fails_closed(direct_deploy):
         "INVALID_MODEL_OUTPUT",
     )
     assert result["decision"] == "INSUFFICIENT_EVIDENCE"
+
+
+def verified_state():
+    return {
+        "status": "VERIFIED",
+        "claim_id": "7",
+        "verdict_id": "11",
+        "subject_hash": "subject",
+        "policy_version": "gns-auth-v2",
+        "evidence_expires_at": NOW + 3600,
+    }
+
+
+def verified_claim():
+    return {
+        "id": "7",
+        "namespace": "meritra.gen",
+        "status": "VERIFIED",
+        "active_challenge_id": "",
+    }
+
+
+def test_open_challenge_does_not_remove_finalized_verification(direct_deploy):
+    contract = deploy(direct_deploy)
+    transition = contract._open_challenge_state(verified_claim(), verified_state(), "9")
+    assert transition["claim"]["status"] == "CHALLENGED"
+    assert transition["verification"]["status"] == "VERIFIED"
+    assert transition["verification"]["challenge_status"] == "OPEN"
+
+
+def test_inconclusive_challenge_preserves_prior_verification(direct_deploy):
+    contract = deploy(direct_deploy)
+    transition = contract._apply_challenge_resolution_state(
+        verified_claim(),
+        verified_state(),
+        "9",
+        "12",
+        "INSUFFICIENT_EVIDENCE",
+        "NO_RETRIEVABLE_CHALLENGER_EVIDENCE",
+        NOW + 3600,
+        NOW,
+    )
+    assert transition["claim"]["status"] == "VERIFIED"
+    assert transition["verification"]["status"] == "VERIFIED"
+    assert transition["verification"]["verdict_id"] == "11"
+    assert transition["verification"]["last_challenge_verdict_id"] == "12"
+
+
+def test_only_revoke_replaces_authoritative_verdict(direct_deploy):
+    contract = deploy(direct_deploy)
+    transition = contract._apply_challenge_resolution_state(
+        verified_claim(),
+        verified_state(),
+        "9",
+        "12",
+        "REVOKE",
+        "IMPERSONATION_PROVEN",
+        0,
+        NOW,
+    )
+    assert transition["claim"]["status"] == "REVOKED"
+    assert transition["verification"]["status"] == "REVOKED"
+    assert transition["verification"]["verdict_id"] == "12"
+
+
+def test_lost_claimant_attestation_becomes_stale_not_revoked(direct_deploy):
+    contract = deploy(direct_deploy)
+    transition = contract._apply_challenge_resolution_state(
+        verified_claim(),
+        verified_state(),
+        "9",
+        "12",
+        "INSUFFICIENT_EVIDENCE",
+        "CLAIMANT_ATTESTATION_NO_LONGER_VALID",
+        0,
+        NOW,
+    )
+    assert transition["claim"]["status"] == "INSUFFICIENT_EVIDENCE"
+    assert transition["verification"]["status"] == "STALE"
+    assert transition["verification"]["verdict_id"] == "11"
+

@@ -53,6 +53,9 @@ export interface NamespaceVerification {
   verified_at?: number;
   evidence_expires_at?: number;
   challenge_id?: string;
+  challenge_status?: "OPEN" | "UPHOLD" | "REVOKE" | "INSUFFICIENT_EVIDENCE";
+  last_challenge_id?: string;
+  last_challenge_verdict_id?: string;
   invalidation_reason?: string;
   revoked_at?: number;
   revocation_reason?: string;
