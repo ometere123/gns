@@ -14,6 +14,10 @@ on:
       - "package*.json"
       - ".github/workflows/v2-ci.yml"
 
+concurrency:
+  group: gns-authenticity-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   validate:
     runs-on: ubuntu-latest
