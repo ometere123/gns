@@ -2,120 +2,106 @@
 
 GNS is a human-readable `.gen` namespace protocol with evidence-grounded authenticity and disputes.
 
-The v3 architecture deliberately separates three different concerns:
+The v3 architecture separates three concerns:
 
-- **GenLayer registry:** deterministic namespace ownership, records, transfers, subnames and Arc-payment receipt consumption.
+- **GenLayer registry:** authoritative `.gen` ownership, expiry, records, reverse lookup, transfers, subnames, registration reservations and one-time Arc receipt consumption.
 - **GenLayer authenticity:** evidence retrieval, wallet-bound attestations, authenticity verdicts, challenges and dispute resolution.
 - **Arc payment router:** USDC pricing, collection, treasury accounting, withdrawals and payment administration.
 
-GNS does **not** use GEN as its commercial pricing asset. GEN remains a GenLayer network asset wherever GenLayer transaction execution requires it. GNS registration and renewal prices are denominated in USDC on Arc.
+**The `.gen` names themselves remain on GenLayer.** Arc never owns, resolves, transfers or adjudicates a namespace. Arc is only the commercial USDC payment rail for registration and renewal.
 
-## Why Arc
+GNS does not use GEN as its commercial pricing asset. GEN remains a GenLayer network asset wherever GenLayer transaction execution requires it; GNS registration and renewal prices are denominated in USDC on Arc.
 
-Arc Testnet uses USDC as its gas asset and exposes a 6-decimal USDC ERC-20 interface, which lets a user hold one asset for both GNS payment and Arc transaction fees.
-
-Current v3 constants:
+## Arc Testnet
 
 | Item | Value |
 | --- | --- |
-| Arc chain ID | `5042002` |
-| Arc RPC | `https://rpc.testnet.arc.network` |
-| Arc explorer | `https://testnet.arcscan.app` |
-| Arc test USDC | `0x3600000000000000000000000000000000000000` |
-| Payment event | `PaymentRecorded(address,bytes32,uint8,uint16,uint256)` |
-| Payment event topic | `0x16246dce28fe193971c235293f898fe6af15aa3539719b24d894793343162838` |
+| Chain ID | `5042002` |
+| RPC | `https://rpc.testnet.arc.network` |
+| Explorer | `https://testnet.arcscan.app` |
+| Test USDC ERC-20 | `0x3600000000000000000000000000000000000000` |
+| USDC ERC-20 decimals | `6` |
+| Native gas asset | USDC |
+| Finality | deterministic BFT finality |
 
-## Payment lifecycle
+Arc's native representation uses 18-decimal precision while the USDC ERC-20 interface uses 6 decimals. GNS commercial amounts are ERC-20 USDC base units.
 
-A browser "paid" flag is never authoritative.
+## Registration lifecycle
 
-1. The user selects a `.gen` namespace and duration.
-2. The frontend reads the price from `GNSPaymentRouter` on Arc.
-3. The user approves the exact required USDC amount if allowance is insufficient.
-4. The user calls `payRegistration()` or `payRenewal()` on Arc.
-5. The router transfers USDC into the contract and emits a receipt bound to:
-   - payer;
-   - SHA-256 of the canonical lowercase `.gen` namespace;
-   - action (`REGISTER` or `RENEW`);
-   - duration;
-   - amount.
-6. The frontend stores the Arc transaction hash and event log index locally so the flow can be resumed without paying twice.
-7. The user switches to GenLayer and submits the Arc receipt reference.
-8. GenLayer validators independently retrieve the Arc JSON-RPC transaction receipt and latest block.
-9. `GNSRegistry` verifies the successful router call, event signature, router address, payer, namespace hash, action, years, positive amount and Arc finality.
-10. The receipt key `5042002:<txHash>:<logIndex>` is consumed exactly once.
-11. Only then does the GenLayer registration or renewal finalize.
+A successful Arc payment is **not** namespace ownership. Ownership exists only after the GenLayer registry finalizes the registration.
 
-A legitimate Arc receipt is not invalidated merely because the protocol changes prices after the payment was made. Price enforcement happens at the immutable payment router at payment time; the GenLayer side verifies the resulting router receipt.
+1. User chooses an available canonical lowercase `.gen` namespace, duration and primary address.
+2. The wallet calls `reserve_registration(...)` on GenLayer.
+3. GenLayer finalizes a short reservation bound to wallet, namespace, duration and primary address.
+4. Only after that reservation exists does the frontend enable Arc payment.
+5. The frontend reads the current registration price from `GNSPaymentRouter`.
+6. User approves the exact required USDC allowance if necessary.
+7. User calls `payRegistration(namespace, years)` on Arc.
+8. The router transfers USDC and emits `PaymentRecorded(address,bytes32,uint8,uint16,uint256)`.
+9. The frontend stores the Arc transaction hash and payment-event log index so an interrupted flow can resume without another payment.
+10. User returns to GenLayer and calls `register(...)` with the Arc receipt reference.
+11. GenLayer validators independently fetch the Arc transaction receipt through JSON-RPC.
+12. `GNSRegistry` verifies successful execution, configured router, event signature, payer, SHA-256 namespace hash, action, duration and positive amount.
+13. The registry re-checks the active matching reservation and consumes `5042002:<txHash>:<logIndex>` exactly once.
+14. Only then is `.gen` ownership created on GenLayer.
+
+The reservation prevents the ordinary cross-chain race in which two wallets could otherwise pay Arc for the same still-unfinalized namespace.
+
+Arc uses deterministic finality: once a transaction receipt is in a committed block it is irreversible, so the registry does not compare a moving latest-block number between GenLayer validators.
+
+## Renewal lifecycle
+
+Renewal remains owner-gated on GenLayer:
+
+> **Pay USDC on Arc → verify receipt on GenLayer → extend expiry on GenLayer**
+
+A legitimate router receipt does not become invalid merely because the Arc admin changes pricing after payment. Price enforcement occurs at the router when USDC is collected; GenLayer verifies the resulting immutable payment event.
 
 ## Contracts
 
 ### `evm/GNSPaymentRouter.sol`
 
-Arc USDC payment rail.
+Arc USDC payment rail:
 
-Responsibilities:
-
-- registration and renewal pricing;
-- USDC collection;
-- payment receipt events;
+- independent registration and renewal prices;
+- USDC collection and payment events;
+- payment pause;
 - separate admin and treasury roles;
 - two-step admin transfer;
 - two-step treasury transfer;
-- pause/unpause payment collection;
 - treasury-only partial/full withdrawal;
-- total collected / withdrawn accounting.
+- collection and withdrawal accounting;
+- reentrancy protection and safe ERC-20 calls.
 
-The Arc admin cannot change `.gen` ownership or authenticity verdicts. The treasury cannot change pricing or protocol administration.
+The Arc admin cannot modify `.gen` ownership or authenticity verdicts. The treasury cannot change protocol pricing or namespace state.
 
 ### `contracts/GNSRegistry.py`
 
-GenLayer deterministic namespace registry.
+GenLayer namespace source of truth. Current v3 version: `2.1.0-arc-usdc-reservations`.
 
-Responsibilities:
-
-- `.gen` ownership and expiry;
-- records and primary addresses;
-- reverse lookup;
-- transfers and subnames;
-- reports;
-- Arc receipt verification and one-time consumption;
-- registration pause;
-- two-step GenLayer admin transfer.
+Responsibilities include ownership, expiry, records, reverse lookup, transfers, subnames, registration reservations, deterministic reports/admin controls, Arc receipt verification and one-time receipt consumption.
 
 The v3 registry has no commercial GEN price, no payable registration path and no GEN treasury withdrawal path.
 
+Expired owners cannot mutate expired names. Reverse lookup fails closed for expired names, and expired re-registration cleans stale owner/reverse state.
+
 ### `contracts/GNSAuthenticity.py`
 
-GenLayer evidence-grounded trust layer.
+Separate GenLayer evidence-grounded trust layer. Registration proves namespace ownership only; it does **not** prove the real-world identity, organization, project or brand represented by the namespace.
 
-Registration proves namespace ownership only. It does **not** prove the real-world identity/project represented by a namespace.
-
-Authenticity v2 adds:
-
-- claim-specific nonce;
-- wallet-controlled public attestation;
-- subject hash binding to current registry owner/records/policy;
-- evidence retrieval inside every verdict-bearing path;
-- GitHub/website source binding;
-- bounded attestation freshness;
-- fail-closed malformed model output;
-- validator comparison of decision-critical fields;
-- challenge burden-of-proof semantics that do not let weak challenges erase a VERIFIED state.
+The authenticity layer requires claim-specific wallet-bound public attestations, fetches cited evidence inside verdict-bearing paths, fails closed on malformed judgment output and preserves an existing VERIFIED state when a challenge is weak or inconclusive.
 
 See [`docs/authenticity-v2.md`](docs/authenticity-v2.md).
 
 ## Authority model
 
-There is intentionally no omnipotent admin.
-
 | Role | Can do | Cannot do |
 | --- | --- | --- |
-| GenLayer registry admin | pause new registrations, propose registry admin, moderate deterministic reports/flags | withdraw Arc USDC, manufacture authenticity verdicts |
-| Arc router admin | set prices, pause payments, propose Arc admin/treasury | modify `.gen` ownership, withdraw treasury funds unless also treasury |
-| Arc treasury | withdraw collected USDC, accept a proposed treasury role | change prices, namespaces, authenticity or admins |
-| Namespace owner | manage owned namespace and create authenticity claim | change protocol pricing/treasury/admin |
-| GenLayer authenticity consensus | adjudicate evidence-grounded authenticity/challenges | take custody of Arc USDC |
+| GenLayer registry admin | pause registrations, propose registry admin, moderate deterministic reports/flags | withdraw Arc USDC, manufacture authenticity verdicts |
+| Arc router admin | set prices, pause payments, propose Arc admin/treasury | modify `.gen` ownership, withdraw funds unless also treasury |
+| Arc treasury | withdraw collected USDC, accept a treasury proposal | change prices, namespaces, authenticity or admins |
+| Namespace owner | manage active owned namespaces and create authenticity claims | change protocol pricing/treasury/admin |
+| GenLayer authenticity consensus | adjudicate evidence-grounded claims/challenges | take custody of Arc USDC |
 
 Admin and treasury transfers are two-step proposals requiring acceptance by the destination wallet.
 
@@ -123,17 +109,38 @@ Admin and treasury transfers are two-step proposals requiring acceptance by the 
 
 Next.js 15 frontend with no separately hosted application backend.
 
-Paid actions expose the actual cross-chain lifecycle:
+Registration exposes the real lifecycle:
+
+> **Reserve on GenLayer → Pay on Arc → Finalize on GenLayer**
+
+Renewal exposes:
 
 > **Pay on Arc → Finalize on GenLayer**
 
-The Arc receipt is stored only as resumable browser state; GenLayer still independently verifies it from Arc RPC.
+Browser-stored Arc receipt state is resumable convenience only. GenLayer independently verifies the receipt from Arc RPC before mutating authoritative namespace state.
 
-Operational controls at `/ops-gns` are also split by on-chain role. UI access checks are convenience only; contract permissions remain authoritative.
+Operational controls at `/ops-gns` are split by on-chain role; frontend access checks are convenience only and contract permissions remain authoritative.
+
+## Validation
+
+Validated on branch `v3-arc-usdc` at commit `33b300b4db2f925af886d68b38ec821208f8daaf` before this documentation-only update:
+
+- GenVM lint: both GenLayer contracts passed;
+- Python compile: passed;
+- Direct Mode: **35/35 passed**;
+- Foundry formatting: passed;
+- Solidity 0.8.24 build: passed;
+- `GNSPaymentRouter` runtime size: **5,713 bytes**;
+- Foundry: **10/10 passed**;
+- `npm ci`: passed;
+- `npm audit --audit-level=high`: **0 vulnerabilities**;
+- Next.js 15.5.24 optimized production build: passed.
+
+GitHub Actions run: `33012823039`.
 
 ## Local configuration
 
-Copy `.env.example` to `.env.local` and fill the deployed addresses:
+Copy `.env.example` to `.env.local` and fill the fresh v3 addresses:
 
 ```bash
 NEXT_PUBLIC_GNS_CONTRACT_ADDRESS=
@@ -141,79 +148,33 @@ NEXT_PUBLIC_GNS_AUTHENTICITY_CONTRACT_ADDRESS=
 NEXT_PUBLIC_ARC_PAYMENT_ROUTER_ADDRESS=
 ```
 
-Network defaults are already provided for Studionet and Arc Testnet.
-
 Never commit private keys, seed phrases, keystore passwords or `.env.local`.
-
-## Build and test
-
-### GenLayer
-
-```bash
-pip install -r requirements-dev.txt
-genvm-lint check contracts/GNSRegistry.py
-genvm-lint check contracts/GNSAuthenticity.py
-python -m py_compile contracts/GNSRegistry.py contracts/GNSAuthenticity.py
-pytest tests/direct -v
-```
-
-### Arc router
-
-```bash
-forge fmt --check
-forge build --sizes
-forge test -vvv
-```
-
-### Frontend
-
-```bash
-npm ci
-npm audit --audit-level=high
-npm run build
-```
-
-The same checks run in GitHub Actions on `v3-arc-usdc`.
 
 ## Deployment order
 
-Do not deploy the GenLayer registry first. Its Arc payment-router address is immutable by design.
+The Arc router must be deployed first because the GenLayer registry permanently binds its address.
 
-1. Deploy `GNSPaymentRouter` on Arc Testnet using a controlled admin and treasury wallet.
-2. Set `NEXT_PUBLIC_ARC_PAYMENT_ROUTER_ADDRESS` locally.
-3. Deploy fresh `GNSRegistry.py`; constructor binds the Arc router.
-4. Deploy fresh `GNSAuthenticity.py` against the new registry.
+1. Deploy `GNSPaymentRouter` on Arc Testnet using controlled admin and treasury accounts.
+2. Configure `NEXT_PUBLIC_ARC_PAYMENT_ROUTER_ADDRESS`.
+3. Deploy a **fresh** `GNSRegistry.py` with that router constructor argument.
+4. Deploy a **fresh** `GNSAuthenticity.py` against the new registry.
 5. Configure the frontend with all three addresses.
-6. Run a real Arc USDC registration → GenLayer finalization lifecycle.
-7. Set truthful public GitHub evidence on that new namespace.
-8. Run authenticity claim → verification → controlled challenge → challenge resolution.
-9. Record only actually observed addresses, tx hashes, claim IDs and verdicts in the deployment evidence document.
+6. Run a real GenLayer reservation → Arc USDC registration payment → GenLayer registration finalization lifecycle.
+7. Confirm the Arc receipt is consumed exactly once and the namespace resolves to the expected owner.
+8. Set truthful public evidence under a source the owner actually controls.
+9. Run authenticity claim → verification → controlled challenge → resolution.
+10. Record only observed addresses, transaction hashes, claim IDs and verdicts.
 
-Detailed Arc deployment and smoke procedure: [`docs/arc-usdc.md`](docs/arc-usdc.md).
+See [`docs/arc-usdc.md`](docs/arc-usdc.md) and [`docs/deploy-genlayer.md`](docs/deploy-genlayer.md).
 
 ## Deployment status
 
-**v3 Arc/USDC architecture is currently implementation/test stage.**
+**v3 is source-complete and CI-validated but not yet represented by a fresh live deployment.**
 
-The previous v2 registry/authenticity deployments are historical proof for the authenticity recovery branch and are **not** v3 deployment addresses. Do not configure the v3 frontend with an old registry merely to make it appear deployed.
-
-A fresh v3 deployment is required because:
-
-- the registry constructor now binds an Arc router;
-- registration/renewal signatures changed;
-- the old registry commercial model used GEN;
-- final deployment proof must correspond exactly to final reviewed source.
-
-## Reviewer feedback addressed by the architecture
-
-The original authenticity rejection identified three core weaknesses. V2/v3 address them directly:
-
-1. **Stable URL content is not ownership proof.** Authenticity requires a claim-specific, wallet-bound attestation under a registered source.
-2. **Verdict-bearing reviews must fetch cited evidence.** Claim verification and challenge resolution retrieve their evidence inside validator execution.
-3. **A deterministic name service alone is not the GenLayer use case.** Namespace infrastructure is deterministic; GenLayer's differentiated role is live-evidence authenticity/dispute adjudication and independent verification of Arc payment facts before state mutation.
+Historical v2 registry/authenticity addresses are not v3 proof. A fresh deployment is mandatory because the new registry constructor binds the Arc router and the registration lifecycle now includes a GenLayer reservation plus Arc receipt verification.
 
 ## Branch policy
 
 - `v2-authenticity-adjudication` preserves the audited authenticity-recovery baseline.
 - `v3-arc-usdc` contains the Arc USDC commercial architecture.
-- Do not merge v3 to `main` until final CI, live Arc/GenLayer lifecycle proof and independent audit are complete.
+- Do not merge v3 to `main` until fresh live Arc/GenLayer lifecycle proof and final audit are complete.
