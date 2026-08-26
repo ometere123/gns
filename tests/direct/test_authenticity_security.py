@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 
 REGISTRY = "0x" + "1" * 40
