@@ -1,0 +1,44 @@
+name: Inspect live GNS registry
+
+on:
+  push:
+    branches:
+      - v2-authenticity-adjudication
+    paths:
+      - "scripts/trigger-live-registry-inspect.txt"
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Read candidate Studionet registries
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { createClient } from "genlayer-js";
+          import { studionet } from "genlayer-js/chains";
+          const client = createClient({ chain: studionet });
+          const candidates = [
+            "0xaB048D752532Af86573C3269E0Dc49f600d90F19",
+            "0x44a224BF67a4fB17a3a0f0585958dCCc1dfA1AD2"
+          ];
+          for (const address of candidates) {
+            console.log(`CANDIDATE ${address}`);
+            try {
+              const version = await client.readContract({ address, functionName: "contract_version", args: [], stateStatus: "finalized" });
+              const total = await client.readContract({ address, functionName: "get_total_names", args: [], stateStatus: "finalized" });
+              const papito = await client.readContract({ address, functionName: "resolve", args: ["papito902odb.gen"], stateStatus: "finalized" });
+              console.log("VERSION", String(version));
+              console.log("TOTAL_NAMES", String(total));
+              console.log("PAPITO", typeof papito === "string" ? papito : JSON.stringify(papito));
+            } catch (error) {
+              console.log("ERROR", error?.message || String(error));
+            }
+          }
+          NODE
