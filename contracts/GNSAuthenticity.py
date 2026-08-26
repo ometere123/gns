@@ -237,6 +237,13 @@ class GNSAuthenticity(gl.Contract):
             )
         return self._sha256_text(self._dump(compact))
 
+    def _corroboration_count(self, fetched) -> int:
+        count = 0
+        for item in fetched:
+            if bool(item.get("ok", False)) and str(item.get("type", "")) != "attestation":
+                count += 1
+        return count
+
     def _github_attestation_prefixes(self, github_record: str):
         clean = str(github_record).strip().rstrip("/")
         root = "https://github.com/"
@@ -256,6 +263,15 @@ class GNSAuthenticity(gl.Contract):
         ]
 
     def _attestation_url_authorized(self, url: str, registry_snapshot) -> bool:
+        lower_url = str(url).lower()
+        if (
+            "/../" in lower_url
+            or "/./" in lower_url
+            or "%2e" in lower_url
+            or "%2f" in lower_url
+            or "%5c" in lower_url
+        ):
+            return False
         records = registry_snapshot.get("records", {})
         website = str(records.get("website", "")).strip().rstrip("/")
         agent = str(records.get("agent", "")).strip().rstrip("/")
@@ -289,6 +305,8 @@ class GNSAuthenticity(gl.Contract):
         earliest_expiry = 0
         for source in fetched:
             if not bool(source.get("ok", False)):
+                continue
+            if str(source.get("type", "")) != "attestation":
                 continue
             source_url = str(source.get("url", ""))
             if not self._attestation_url_authorized(source_url, registry_snapshot):
@@ -476,12 +494,12 @@ class GNSAuthenticity(gl.Contract):
                 "evidence_expires_at": 0,
             }
 
-        successful = 0
-        for item in fetched:
-            if bool(item.get("ok", False)):
-                successful += 1
+        successful_corroboration = self._corroboration_count(fetched)
         claim_type = str(claim.get("claim_type", ""))
-        if claim_type in ["project", "organization", "public_identity"] and successful < 2:
+        if (
+            claim_type in ["project", "organization", "public_identity"]
+            and successful_corroboration < 1
+        ):
             return {
                 "decision": "INSUFFICIENT_EVIDENCE",
                 "reason_code": "CORROBORATION_REQUIRED",

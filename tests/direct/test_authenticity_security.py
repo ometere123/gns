@@ -120,6 +120,40 @@ def test_registered_github_repo_can_host_raw_attestation(direct_deploy):
     assert check(contract, source)["count"] == 1
 
 
+def test_attestation_must_be_typed_as_attestation(direct_deploy):
+    contract = deploy(direct_deploy)
+    source = fetched(
+        "https://meritra.example/.well-known/gns-claim.json",
+        attestation(),
+    )
+    source["type"] = "other"
+    assert check(contract, source)["count"] == 0
+
+
+def test_github_attestation_rejects_path_traversal(direct_deploy):
+    contract = deploy(direct_deploy)
+    snapshot = registry_snapshot()
+    assert not contract._attestation_url_authorized(
+        "https://raw.githubusercontent.com/ometere123/meritra/../other/main/gns-claim.json",
+        snapshot,
+    )
+    assert not contract._attestation_url_authorized(
+        "https://raw.githubusercontent.com/ometere123/meritra/%2e%2e/other/main/gns-claim.json",
+        snapshot,
+    )
+
+
+def test_project_corroboration_requires_non_attestation_source(direct_deploy):
+    contract = deploy(direct_deploy)
+    only_attestations = [
+        {"type": "attestation", "ok": True},
+        {"type": "attestation", "ok": True},
+    ]
+    assert contract._corroboration_count(only_attestations) == 0
+    with_corroboration = only_attestations + [{"type": "github", "ok": True}]
+    assert contract._corroboration_count(with_corroboration) == 1
+
+
 def test_arbitrary_host_cannot_be_ownership_proof(direct_deploy):
     contract = deploy(direct_deploy)
     source = fetched("https://attacker.example/claim.json", attestation())
