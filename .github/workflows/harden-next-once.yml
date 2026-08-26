@@ -1,4 +1,4 @@
-name: Harden Next.js dependency once
+name: Harden frontend dependencies once
 
 on:
   push:
@@ -21,9 +21,11 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-      - name: Upgrade patched Next.js maintenance release
-        run: npm install --save-exact next@15.5.24 eslint-config-next@15.5.24
-      - name: Verify installed versions and audit
+      - name: Install exact lockfile
+        run: npm ci
+      - name: Apply non-breaking npm security fixes
+        run: npm audit fix
+      - name: Verify patched framework and audit remainder
         shell: bash
         run: |
           node -e 'console.log("NEXT=" + require("next/package.json").version)'
@@ -31,7 +33,7 @@ jobs:
           npm audit --audit-level=high || true
       - name: Build
         run: npm run build
-      - name: Commit dependency hardening
+      - name: Commit non-breaking dependency fixes
         shell: bash
         run: |
           git config user.name "papitodele"
@@ -41,5 +43,5 @@ jobs:
             echo "No dependency changes to commit."
             exit 0
           fi
-          git commit -m "fix: upgrade Next.js to patched 15.5.24"
+          git commit -m "fix: apply non-breaking npm security updates"
           git push origin HEAD:v2-authenticity-adjudication
