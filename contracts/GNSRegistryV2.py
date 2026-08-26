@@ -68,14 +68,15 @@ class GNSRegistryV2(gl.Contract):
         self.challenge_counter = u256(0)
         self.verdict_counter = u256(0)
 
+    # ---------------------------------------------------------------------
+    # Basic helpers
+    # ---------------------------------------------------------------------
+
     def _sender(self) -> str:
         return str(gl.message.sender_address).lower()
 
     def _self_address(self) -> str:
-        try:
-            return str(self.address).lower()
-        except Exception:
-            return ""
+        return str(gl.message.contract_address).lower()
 
     def _now(self) -> int:
         return int(datetime.now(timezone.utc).timestamp())
@@ -179,7 +180,7 @@ class GNSRegistryV2(gl.Contract):
             [item for item in arr if item != namespace]
         )
 
-    def _subject_hash(self, namespace: str, name_obj) -> str:
+    def _subject_hash(self, namespace: str, name_obj, policy_version: str) -> str:
         subject = {
             "namespace": namespace,
             "owner": str(name_obj.get("owner", "")).lower(),
@@ -190,7 +191,7 @@ class GNSRegistryV2(gl.Contract):
                 "x": str(name_obj.get("records", {}).get("x", "")),
                 "agent": str(name_obj.get("records", {}).get("agent", "")),
             },
-            "policy_version": self.policy_version,
+            "policy_version": policy_version,
         }
         return self._sha256_text(self._dump(subject))
 
@@ -202,6 +203,10 @@ class GNSRegistryV2(gl.Contract):
             verification["invalidation_reason"] = reason
             name_obj["verification"] = verification
             self._save_name(namespace, name_obj)
+
+    # ---------------------------------------------------------------------
+    # Evidence model
+    # ---------------------------------------------------------------------
 
     def _parse_manifest(self, evidence_manifest_json: str):
         if len(evidence_manifest_json) > 6000:
@@ -268,8 +273,9 @@ class GNSRegistryV2(gl.Contract):
         claim_id: str,
         challenge_nonce: str,
         policy_version: str,
+        expected_registry: str,
+        now_ts: int,
     ) -> dict:
-        expected_registry = self._self_address()
         valid = 0
         invalid = 0
         reasons = []
@@ -307,7 +313,7 @@ class GNSRegistryV2(gl.Contract):
 
             try:
                 expires_at = int(parsed.get("expires_at", 0))
-                if expires_at <= self._now():
+                if expires_at <= now_ts:
                     source_ok = False
             except Exception:
                 source_ok = False
@@ -361,6 +367,10 @@ class GNSRegistryV2(gl.Contract):
                 "reason_code": fallback_reason,
                 "summary": "Consensus output could not be parsed safely.",
             }
+
+    # ---------------------------------------------------------------------
+    # Deterministic namespace layer
+    # ---------------------------------------------------------------------
 
     @gl.public.write
     def register(self, label: str, primary_address: str) -> str:
@@ -456,6 +466,10 @@ class GNSRegistryV2(gl.Contract):
         self._save_name(namespace, obj)
         return self._dump({"success": True, "namespace": namespace})
 
+    # ---------------------------------------------------------------------
+    # Claim lifecycle
+    # ---------------------------------------------------------------------
+
     @gl.public.write
     def create_claim(
         self,
@@ -486,7 +500,7 @@ class GNSRegistryV2(gl.Contract):
             + str(self._now())
         )[:32]
 
-        subject_hash = self._subject_hash(namespace, name_obj)
+        subject_hash = self._subject_hash(namespace, name_obj, self.policy_version)
         claim = {
             "id": claim_id,
             "namespace": namespace,
@@ -514,18 +528,17 @@ class GNSRegistryV2(gl.Contract):
             "policy_version": self.policy_version,
         })
 
-    def _evaluate_positive_claim(self, claim) -> dict:
+    def _evaluate_positive_claim(
+        self,
+        claim,
+        name_snapshot,
+        current_subject_hash: str,
+        expected_registry: str,
+        now_ts: int,
+    ) -> dict:
         namespace = str(claim.get("namespace", ""))
-        name_obj = self._name_obj(namespace)
-        if name_obj is None:
-            return {
-                "decision": "REJECTED",
-                "reason_code": "NAMESPACE_MISSING",
-                "summary": "Namespace no longer exists.",
-                "evidence_digest": "",
-            }
+        current_owner = str(name_snapshot.get("owner", "")).lower()
 
-        current_owner = str(name_obj.get("owner", "")).lower()
         if current_owner != str(claim.get("owner", "")).lower():
             return {
                 "decision": "REJECTED",
@@ -534,7 +547,6 @@ class GNSRegistryV2(gl.Contract):
                 "evidence_digest": "",
             }
 
-        current_subject_hash = self._subject_hash(namespace, name_obj)
         if current_subject_hash != str(claim.get("subject_hash", "")):
             return {
                 "decision": "REJECTED",
@@ -552,6 +564,8 @@ class GNSRegistryV2(gl.Contract):
             str(claim.get("id", "")),
             str(claim.get("challenge", "")),
             str(claim.get("policy_version", "")),
+            expected_registry,
+            now_ts,
         )
 
         if int(check.get("valid_attestations", 0)) < 1:
@@ -610,13 +624,34 @@ class GNSRegistryV2(gl.Contract):
         if self._sender() != str(claim.get("owner", "")).lower():
             raise gl.vm.UserError("Only the claim owner can request verification")
 
+        namespace = str(claim.get("namespace", ""))
+        name_snapshot = self._require_name(namespace)
+        policy_snapshot = str(claim.get("policy_version", ""))
+        current_subject_hash = self._subject_hash(
+            namespace, name_snapshot, policy_snapshot
+        )
+        expected_registry = self._self_address()
+        now_ts = self._now()
+
         def leader_fn():
-            return self._evaluate_positive_claim(claim)
+            return self._evaluate_positive_claim(
+                claim,
+                name_snapshot,
+                current_subject_hash,
+                expected_registry,
+                now_ts,
+            )
 
         def validator_fn(leader_result) -> bool:
             if not isinstance(leader_result, gl.vm.Return):
                 return False
-            validator = self._evaluate_positive_claim(claim)
+            validator = self._evaluate_positive_claim(
+                claim,
+                name_snapshot,
+                current_subject_hash,
+                expected_registry,
+                now_ts,
+            )
             leader = leader_result.calldata
             return (
                 str(leader.get("decision", "")) == str(validator.get("decision", ""))
@@ -632,12 +667,12 @@ class GNSRegistryV2(gl.Contract):
             "id": verdict_id,
             "kind": "CLAIM_VERIFICATION",
             "claim_id": str(claim_id),
-            "namespace": claim.get("namespace", ""),
+            "namespace": namespace,
             "decision": result.get("decision", "INSUFFICIENT_EVIDENCE"),
             "reason_code": result.get("reason_code", "UNKNOWN"),
             "summary": result.get("summary", ""),
             "evidence_digest": result.get("evidence_digest", ""),
-            "policy_version": claim.get("policy_version", ""),
+            "policy_version": policy_snapshot,
             "subject_hash": claim.get("subject_hash", ""),
             "created_at": self._now(),
         }
@@ -650,7 +685,6 @@ class GNSRegistryV2(gl.Contract):
             claim["verified_at"] = self._now()
         self._save_claim(str(claim_id), claim)
 
-        namespace = str(claim.get("namespace", ""))
         name_obj = self._require_name(namespace)
         if decision == "VERIFIED":
             name_obj["verification"] = {
@@ -658,7 +692,7 @@ class GNSRegistryV2(gl.Contract):
                 "claim_id": str(claim_id),
                 "verdict_id": verdict_id,
                 "subject_hash": claim.get("subject_hash", ""),
-                "policy_version": claim.get("policy_version", ""),
+                "policy_version": policy_snapshot,
                 "verified_at": self._now(),
                 "invalidation_reason": "",
             }
@@ -668,13 +702,17 @@ class GNSRegistryV2(gl.Contract):
                 "claim_id": str(claim_id),
                 "verdict_id": verdict_id,
                 "subject_hash": claim.get("subject_hash", ""),
-                "policy_version": claim.get("policy_version", ""),
+                "policy_version": policy_snapshot,
                 "verified_at": 0,
                 "invalidation_reason": "",
             }
         self._save_name(namespace, name_obj)
 
         return self._dump({"success": True, "verdict": verdict})
+
+    # ---------------------------------------------------------------------
+    # Challenge lifecycle
+    # ---------------------------------------------------------------------
 
     @gl.public.write
     def challenge_claim(
@@ -737,17 +775,16 @@ class GNSRegistryV2(gl.Contract):
 
         return self._dump({"success": True, "challenge_id": challenge_id})
 
-    def _evaluate_challenge(self, claim, challenge) -> dict:
+    def _evaluate_challenge(
+        self,
+        claim,
+        challenge,
+        name_snapshot,
+        current_subject_hash: str,
+        expected_registry: str,
+        now_ts: int,
+    ) -> dict:
         namespace = str(claim.get("namespace", ""))
-        name_obj = self._name_obj(namespace)
-        if name_obj is None:
-            return {
-                "decision": "REVOKE",
-                "reason_code": "NAMESPACE_MISSING",
-                "summary": "Namespace no longer exists.",
-                "evidence_digest": "",
-            }
-
         claimant_fetched = self._fetch_all(claim.get("evidence_manifest", []))
         challenger_fetched = self._fetch_all(challenge.get("evidence_manifest", []))
 
@@ -755,7 +792,7 @@ class GNSRegistryV2(gl.Contract):
         challenger_digest = self._evidence_digest(challenger_fetched)
         combined_digest = self._sha256_text(claimant_digest + "|" + challenger_digest)
 
-        current_owner = str(name_obj.get("owner", "")).lower()
+        current_owner = str(name_snapshot.get("owner", "")).lower()
         claimant_binding = self._attestation_check(
             claimant_fetched,
             namespace,
@@ -763,6 +800,8 @@ class GNSRegistryV2(gl.Contract):
             str(claim.get("id", "")),
             str(claim.get("challenge", "")),
             str(claim.get("policy_version", "")),
+            expected_registry,
+            now_ts,
         )
 
         if current_owner != str(claim.get("owner", "")).lower():
@@ -773,7 +812,7 @@ class GNSRegistryV2(gl.Contract):
                 "evidence_digest": combined_digest,
             }
 
-        if self._subject_hash(namespace, name_obj) != str(claim.get("subject_hash", "")):
+        if current_subject_hash != str(claim.get("subject_hash", "")):
             return {
                 "decision": "REVOKE",
                 "reason_code": "SUBJECT_CHANGED",
@@ -829,13 +868,36 @@ class GNSRegistryV2(gl.Contract):
         if claim is None:
             raise gl.vm.UserError("Referenced claim does not exist")
 
+        namespace = str(claim.get("namespace", ""))
+        name_snapshot = self._require_name(namespace)
+        policy_snapshot = str(claim.get("policy_version", ""))
+        current_subject_hash = self._subject_hash(
+            namespace, name_snapshot, policy_snapshot
+        )
+        expected_registry = self._self_address()
+        now_ts = self._now()
+
         def leader_fn():
-            return self._evaluate_challenge(claim, challenge)
+            return self._evaluate_challenge(
+                claim,
+                challenge,
+                name_snapshot,
+                current_subject_hash,
+                expected_registry,
+                now_ts,
+            )
 
         def validator_fn(leader_result) -> bool:
             if not isinstance(leader_result, gl.vm.Return):
                 return False
-            validator = self._evaluate_challenge(claim, challenge)
+            validator = self._evaluate_challenge(
+                claim,
+                challenge,
+                name_snapshot,
+                current_subject_hash,
+                expected_registry,
+                now_ts,
+            )
             leader = leader_result.calldata
             return (
                 str(leader.get("decision", "")) == str(validator.get("decision", ""))
@@ -852,12 +914,12 @@ class GNSRegistryV2(gl.Contract):
             "kind": "CHALLENGE_RESOLUTION",
             "challenge_id": str(challenge_id),
             "claim_id": claim_id,
-            "namespace": challenge.get("namespace", ""),
+            "namespace": namespace,
             "decision": result.get("decision", "INSUFFICIENT_EVIDENCE"),
             "reason_code": result.get("reason_code", "UNKNOWN"),
             "summary": result.get("summary", ""),
             "evidence_digest": result.get("evidence_digest", ""),
-            "policy_version": claim.get("policy_version", ""),
+            "policy_version": policy_snapshot,
             "created_at": self._now(),
         }
         self.verdicts[verdict_id] = self._dump(verdict)
@@ -868,7 +930,6 @@ class GNSRegistryV2(gl.Contract):
         self._save_challenge(str(challenge_id), challenge)
 
         claim["active_challenge_id"] = ""
-        namespace = str(claim.get("namespace", ""))
         name_obj = self._require_name(namespace)
 
         if decision == "REVOKE":
@@ -898,6 +959,10 @@ class GNSRegistryV2(gl.Contract):
 
         return self._dump({"success": True, "verdict": verdict})
 
+    # ---------------------------------------------------------------------
+    # Views
+    # ---------------------------------------------------------------------
+
     @gl.public.view
     def contract_version(self) -> str:
         return CONTRACT_VERSION
@@ -916,7 +981,8 @@ class GNSRegistryV2(gl.Contract):
         verification = obj.get("verification", {})
         if verification.get("status", "") == "VERIFIED":
             expected = str(verification.get("subject_hash", ""))
-            if expected != self._subject_hash(namespace, obj):
+            policy = str(verification.get("policy_version", self.policy_version))
+            if expected != self._subject_hash(namespace, obj, policy):
                 verification["status"] = "STALE"
                 verification["invalidation_reason"] = "SUBJECT_HASH_MISMATCH"
                 obj["verification"] = verification
@@ -970,6 +1036,10 @@ class GNSRegistryV2(gl.Contract):
     @gl.public.view
     def get_total_verdicts(self) -> u256:
         return self.verdict_counter
+
+    # ---------------------------------------------------------------------
+    # Governance
+    # ---------------------------------------------------------------------
 
     @gl.public.write
     def admin_set_policy_version(self, new_policy_version: str) -> str:
