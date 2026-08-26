@@ -9,7 +9,15 @@ NOW = 1_787_730_000
 
 
 def deploy(direct_deploy):
-    return direct_deploy("contracts/GNSAuthenticity.py", REGISTRY)
+    # The contract's Studionet runner pin is intentionally left unchanged.
+    # genlayer-test 0.29.x can mis-resolve that pin to the rc7 bundle, whose
+    # legacy asset name is no longer published. Direct Mode supports an
+    # explicit SDK bundle; v0.2.16 contains this runner/API family.
+    return direct_deploy(
+        "contracts/GNSAuthenticity.py",
+        REGISTRY,
+        sdk_version="v0.2.16",
+    )
 
 
 def registry_snapshot():
