@@ -271,14 +271,18 @@ function DisputesInner() {
         <Card padding="lg" className="space-y-3">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <p className="text-xs uppercase tracking-wide text-muted">Finalized verdict #{verdict.id}</p>
+              <p className="text-xs uppercase tracking-wide text-muted">Finalized consensus decision #{verdict.id}</p>
+              <p className="mt-3 text-[11px] font-medium uppercase tracking-wide text-muted">Leader rationale · informational</p>
               <h2 className="mt-1 text-lg font-semibold text-ink">{verdict.reason_code}</h2>
             </div>
             <Badge tone={tone(verdict.decision)}>{verdict.decision}</Badge>
           </div>
           {verdict.summary && <p className="text-sm text-muted">{verdict.summary}</p>}
           <p className="break-all font-mono text-[11px] text-muted">
-            Evidence digest: {verdict.evidence_digest}
+            Leader evidence digest · provenance metadata: {verdict.evidence_digest}
+          </p>
+          <p className="text-[11px] text-muted">
+            Validators independently compare the consensus decision and evidence expiry; free-form rationale and raw-byte digest are retained as provenance metadata.
           </p>
         </Card>
       )}
