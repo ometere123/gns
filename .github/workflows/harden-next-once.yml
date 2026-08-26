@@ -25,7 +25,7 @@ jobs:
         run: npm ci
       - name: Apply non-breaking npm security fixes
         run: npm audit fix || true
-      - name: Pin secure PostCSS for root and Next transitive use
+      - name: Pin secure PostCSS globally
         shell: bash
         run: |
           node <<'NODE'
@@ -35,8 +35,8 @@ jobs:
           pkg.devDependencies = pkg.devDependencies || {};
           pkg.devDependencies.postcss = '8.5.26';
           pkg.overrides = pkg.overrides || {};
-          const nextOverride = pkg.overrides.next && typeof pkg.overrides.next === 'object' ? pkg.overrides.next : {};
-          pkg.overrides.next = { ...nextOverride, postcss: '8.5.26' };
+          delete pkg.overrides.next;
+          pkg.overrides.postcss = '8.5.26';
           fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\n');
           NODE
           npm install
