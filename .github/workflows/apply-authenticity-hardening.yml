@@ -6,6 +6,7 @@ on:
       - v2-authenticity-adjudication
     paths:
       - "scripts/apply-authenticity-hardening.py"
+      - "scripts/trigger-authenticity-hardening.txt"
 
 permissions:
   contents: write
