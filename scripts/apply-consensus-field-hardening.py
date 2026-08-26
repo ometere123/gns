@@ -43,8 +43,8 @@ replace_once(
 )
 replace_once(
     types,
-    '''  status: "OPEN" | "UPHOLD" | "REVOKE" | "INSUFFICIENT_EVIDENCE";\n''',
-    '''  status: "OPEN" | "UPHOLD" | "REVOKE" | "STALE" | "INSUFFICIENT_EVIDENCE";\n''',
+    '''  status:\n    | "OPEN"\n    | "UPHOLD"\n    | "REVOKE"\n    | "INSUFFICIENT_EVIDENCE"\n    | "SUPERSEDED";\n''',
+    '''  status:\n    | "OPEN"\n    | "UPHOLD"\n    | "REVOKE"\n    | "STALE"\n    | "INSUFFICIENT_EVIDENCE"\n    | "SUPERSEDED";\n''',
 )
 replace_once(
     types,
