@@ -218,7 +218,7 @@ Current local pre-deployment validation:
 - npm audit: `0 vulnerabilities`;
 - Next.js 15.5.24 production build: passed.
 
-No fresh live deployment or CI run is claimed here until the deployment wallet is configured.
+GitHub Actions CI run [33020456278](https://github.com/ometere123/gns/actions/runs/33020456278) passed on pre-deployment source SHA `34477209009724612ec05d54134f6065a2d006d7`. This confirms source validation only; no fresh live deployment is claimed until the shared deployment wallet is configured.
 
 ## 13. Final evidence record
 
