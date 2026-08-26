@@ -1,4 +1,4 @@
-name: GNS v2 CI
+name: GNS authenticity CI
 
 on:
   push:
@@ -6,8 +6,9 @@ on:
       - v2-authenticity-adjudication
   pull_request:
     paths:
-      - "contracts/GNSRegistryV2.py"
+      - "contracts/GNSAuthenticity.py"
       - "src/**"
+      - "scripts/**"
       - "package*.json"
       - ".github/workflows/v2-ci.yml"
 
@@ -26,11 +27,11 @@ jobs:
       - name: Install GenVM linter
         run: pip install genvm-linter
 
-      - name: GenVM lint and validate v2 contract
-        run: genvm-lint check contracts/GNSRegistryV2.py
+      - name: GenVM lint authenticity contract
+        run: genvm-lint check contracts/GNSAuthenticity.py
 
       - name: Python syntax check
-        run: python -m py_compile contracts/GNSRegistryV2.py
+        run: python -m py_compile contracts/GNSAuthenticity.py
 
       - name: Set up Node
         uses: actions/setup-node@v4
