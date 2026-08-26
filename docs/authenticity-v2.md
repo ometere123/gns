@@ -37,13 +37,13 @@ A positive claim requires a source-bound wallet attestation containing:
 - issue time;
 - expiry time.
 
-The attestation must be fetched from a source authorized by current registry records. A valid JSON document hosted on an unrelated HTTPS domain is rejected.
+The claim itself can only be created by the current registry owner. The resulting claim-specific attestation must then be fetched from a source authorized by current registry records. A valid JSON document hosted on an unrelated HTTPS domain is rejected.
 
 ### 2. “Several identity and project reviews do not fetch their cited evidence”
 
 Every v2 verdict-bearing path fetches evidence during its own nondeterministic execution.
 
-`verify_claim()` fetches the entire claimant manifest.
+`verify_claim()` fetches the claimant manifest.
 
 `resolve_challenge()` fetches:
 
@@ -75,7 +75,7 @@ Before nondeterministic execution begins, the authenticity contract snapshots:
 - claim/challenge state;
 - transaction time.
 
-Nondeterministic leader/validator functions receive these snapshots as plain values and do not depend on mutable contract storage.
+Nondeterministic leader/validator functions receive those snapshots as plain values and do not depend on mutable contract storage.
 
 ### Untrusted inputs
 
@@ -85,7 +85,7 @@ The following are always treated as untrusted:
 - challenger context;
 - fetched webpage content;
 - fetched repository content;
-- arbitrary text inside attestations beyond the fields checked deterministically.
+- arbitrary text inside attestations beyond fields checked deterministically.
 
 Prompts explicitly instruct the model not to follow instructions embedded in untrusted evidence.
 
@@ -101,29 +101,47 @@ Supported source relationships in the current policy:
 
 This prevents a claimant from copying valid-looking JSON to an unrelated host and calling it proof.
 
-## Claim state machine
+## Claim and verification state
+
+A namespace starts without authoritative authenticity. A current owner may create a claim and obtain one of these verification outcomes:
 
 ```text
 UNVERIFIED
-    │
+    │ create_claim
     ▼
 PENDING_EVIDENCE
     │ verify_claim
     ├──────────────► VERIFIED
     ├──────────────► REJECTED
     └──────────────► INSUFFICIENT_EVIDENCE
-
-VERIFIED
-    │ challenge_claim
-    ▼
-CHALLENGED
-    │ resolve_challenge
-    ├──────────────► VERIFIED / UPHOLD
-    ├──────────────► REVOKED
-    └──────────────► INCONCLUSIVE
 ```
 
 Creating a newer claim supersedes the older namespace claim. An open challenge against a superseded claim is also marked superseded.
+
+## Challenge state and burden of proof
+
+An open challenge is an allegation, not a revocation.
+
+```text
+Authoritative namespace state: VERIFIED
+Claim state:                 VERIFIED
+
+challenge_claim()
+    │
+    ├─ authoritative namespace state stays VERIFIED
+    ├─ claim state becomes CHALLENGED
+    └─ challenge_status becomes OPEN
+
+resolve_challenge()
+    ├────────► UPHOLD               -> VERIFIED remains
+    ├────────► INSUFFICIENT_EVIDENCE -> VERIFIED remains
+    ├────────► STALE                -> namespace becomes STALE
+    └────────► REVOKE               -> namespace becomes REVOKED
+```
+
+Only a finalized `REVOKE` verdict replaces an existing authoritative verification with a revoked state.
+
+A weak/inconclusive challenge therefore cannot strip a valid badge. If the claimant's own source-bound proof has disappeared or expired, that is represented as `STALE`, not as proof of fraud.
 
 ## Subject binding
 
@@ -141,7 +159,7 @@ agent record
 policy version
 ```
 
-The hash is recalculated from the live registry state before verification and challenge resolution.
+The hash is recalculated from live registry state before verification and challenge resolution.
 
 A different owner or changed identity record therefore cannot inherit the old authenticity claim.
 
@@ -158,7 +176,7 @@ Current policy:
 - future issue-time skew: five minutes;
 - expired attestations are invalid.
 
-The earliest valid attestation expiry is recorded with the verdict. A previously `VERIFIED` namespace becomes effectively `STALE` when the evidence expires.
+The earliest valid attestation expiry is stored as state-bearing verdict data. A previously `VERIFIED` namespace becomes effectively `STALE` when its proof expires.
 
 ## Positive verification algorithm
 
@@ -169,19 +187,19 @@ The earliest valid attestation expiry is recorded with the verdict. A previously
 3. Require the claim policy version to still be current.
 4. Read the namespace from the configured registry.
 5. Recalculate the subject hash.
-6. Snapshot deterministic state and time.
+6. Snapshot deterministic state and transaction time.
 7. Enter explicit GenLayer nondeterministic consensus.
-8. Each execution fetches all evidence URLs.
+8. Each execution independently fetches all evidence URLs.
 9. Ignore failed HTTP responses for proof purposes.
 10. Find at least one attestation that:
     - comes from an authorized registered source;
     - binds to the correct wallet, namespace, registry, authenticity contract, claim id, nonce and policy;
     - passes freshness rules.
-11. For project/organization/public-identity claims, require at least one additional retrievable source.
+11. For project/organization/public-identity claims, require additional retrievable corroboration.
 12. Ask the LLM only the remaining subjective question: whether the corpus substantively supports the claimed relationship.
 13. Fail malformed/disallowed model output to `INSUFFICIENT_EVIDENCE`.
-14. Validators independently reproduce the decision.
-15. Consensus compares the decision-bearing outcome.
+14. Validators independently reproduce the outcome.
+15. Consensus compares all state-bearing result fields: `decision` and `evidence_expires_at`.
 16. Store the finalized verdict provenance, evidence digest and evidence expiry.
 
 ## Challenge algorithm
@@ -193,15 +211,14 @@ The earliest valid attestation expiry is recorded with the verdict. A previously
 3. Recalculate the subject hash.
 4. Fetch the claimant's original evidence again.
 5. Fetch all challenger evidence.
-6. Revoke deterministically if:
-   - the registry owner changed;
-   - identity-bound registry state changed; or
-   - the original source-bound wallet attestation is no longer valid.
-7. Return insufficient evidence if no challenger source can be retrieved.
-8. Otherwise ask validators whether the fresh challenger corpus materially defeats the claim.
-9. Finalize `UPHOLD`, `REVOKE`, or `INSUFFICIENT_EVIDENCE`.
+6. If the registry owner or identity-bound state changed, return `REVOKE` because the verified subject itself no longer matches.
+7. If the claimant's bound proof can no longer be validated, return `STALE` rather than treating missing freshness as fraud.
+8. Return `INSUFFICIENT_EVIDENCE` if the challenger provides no retrievable evidence.
+9. Otherwise ask validators whether the fresh challenger corpus materially defeats the claim.
+10. Finalize `UPHOLD`, `REVOKE`, or `INSUFFICIENT_EVIDENCE`.
+11. Compare `decision` and `evidence_expires_at` across leader/validator results before applying state.
 
-The challenger cannot obtain a revocation merely by submitting accusatory text.
+The challenger cannot obtain a revocation merely by submitting accusatory text, opening a challenge, or providing weak evidence.
 
 ## Equivalence design
 
@@ -209,11 +226,16 @@ V2 uses explicit leader/validator execution rather than a generic one-shot revie
 
 The implementation deliberately does not require exact equality of volatile webpage bytes or free-form prose. Dynamic pages can differ harmlessly between validator fetches.
 
-The consensus-critical comparison focuses on the final decision. The leader still stores an evidence digest and structured reason code for auditability.
+The consensus-critical comparison covers fields that alter authoritative trust state:
+
+- `decision`;
+- `evidence_expires_at`.
+
+The accepted leader's evidence digest and structured reason remain provenance/audit metadata; they are not claimed to be byte-identical validator snapshots.
 
 Deterministic proof checks are performed before LLM judgment wherever possible.
 
-## Finality
+## Finality and successful execution
 
 The authenticity frontend uses strict `FINALIZED` waits for authoritative writes:
 
@@ -223,13 +245,13 @@ The authenticity frontend uses strict `FINALIZED` waits for authoritative writes
 - challenge resolution;
 - explicit status refresh.
 
-A timeout/finality failure is surfaced rather than silently treated as success.
+Finality alone is not treated as success. A finalized GenLayer transaction can still finish with an execution error, so the frontend and deployment/smoke helpers inspect the receipt execution result and require a successful return before reporting success.
 
-This prevents an `ACCEPTED` transaction from being displayed as final authenticity state.
+Timeouts, missing execution-result data on strict authoritative paths, and failed executions are surfaced rather than silently accepted.
 
 ## Legacy registry AI methods
 
-The currently deployed `GNSRegistry.py` still contains older experimental functions such as project/name/report AI review. They remain in the source because the deployed registry already exposes them.
+The existing `GNSRegistry.py` still contains older experimental functions such as project/name/report AI review. They remain in the registry source for backward compatibility.
 
 They are not authoritative in v2:
 
@@ -242,7 +264,7 @@ The advisory name-suggestion method may remain because it has no trust-state con
 
 ## Security test matrix
 
-The Direct Mode suite targets at least these cases:
+The Direct Mode suite covers the original reviewer concerns plus later state-machine hardening:
 
 | Case | Expected |
 | --- | --- |
@@ -261,12 +283,17 @@ The Direct Mode suite targets at least these cases:
 | 404/failed fetch | never count as proof |
 | malformed model output | insufficient evidence |
 | disallowed model decision | insufficient evidence |
+| open challenge against verified claim | preserve authoritative VERIFIED state |
+| weak/inconclusive challenge | preserve prior verification |
+| finalized REVOKE | replace authoritative verdict with revoked state |
+| claimant proof disappears/expires | STALE, not fraud-proven revocation |
+| validator equivalence | compare decision + evidence expiry |
 
-Studionet smoke testing is separate because full lifecycle testing requires two contracts and a claim-specific attestation to be published after claim creation.
+Studionet smoke testing is separate because a full lifecycle requires two contracts, a user-controlled claimant wallet, and a claim-specific attestation published after claim creation.
 
 ## Deployment sequence
 
-1. Use the existing deployed GNS registry or deploy a registry instance.
+1. Use the active GNS registry address.
 2. Set `NEXT_PUBLIC_GNS_CONTRACT_ADDRESS`.
 3. Deploy the authenticity contract:
 
@@ -274,14 +301,14 @@ Studionet smoke testing is separate because full lifecycle testing requires two 
 npm run deploy:authenticity
 ```
 
-4. The script waits for finality and sets `NEXT_PUBLIC_GNS_AUTHENTICITY_CONTRACT_ADDRESS` in `.env.local`.
+4. The script initializes the consensus contract when supported, waits for finality, requires successful execution, validates the returned address, and sets `NEXT_PUBLIC_GNS_AUTHENTICITY_CONTRACT_ADDRESS` in `.env.local`.
 5. Run inspection smoke checks:
 
 ```bash
 npm run smoke:authenticity
 ```
 
-6. Create a real claim from an owner wallet, publish its generated attestation on the registered source, then execute the verification mode described by the smoke helper / frontend.
+6. Create a real claim from an owner wallet, publish its generated attestation on the registered source, then execute the verification and challenge lifecycle.
 
 ## Non-goals
 
@@ -293,4 +320,4 @@ GNS authenticity does not claim to provide:
 - official GenLayer endorsement of a project;
 - permanent verification independent of changing evidence.
 
-It provides a transparent, evidence-grounded protocol verdict tied to the current namespace state and declared policy.
+It provides a transparent, evidence-grounded protocol verdict tied to current namespace state, current proof freshness, and a declared policy.
