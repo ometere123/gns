@@ -11,8 +11,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     env:
-      DEPLOYER_PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
-      NEXT_PUBLIC_GNS_CONTRACT_ADDRESS: 0x44a224BF67a4fB17a3a0f0585958dCCc1dfA1AD2
+      NEXT_PUBLIC_GNS_CONTRACT_ADDRESS: "0x44a224BF67a4fB17a3a0f0585958dCCc1dfA1AD2"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -23,6 +22,8 @@ jobs:
 
       - name: Guard deployer identity
         id: guard
+        env:
+          DEPLOYER_PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
         shell: bash
         run: |
           node --input-type=module <<'NODE'
@@ -47,6 +48,8 @@ jobs:
 
       - name: Deploy authenticity contract
         if: steps.guard.outputs.ready == 'true'
+        env:
+          DEPLOYER_PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
         run: npm run deploy:authenticity
 
       - name: Verify deployed contract
