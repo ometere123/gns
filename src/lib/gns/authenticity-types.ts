@@ -53,7 +53,7 @@ export interface NamespaceVerification {
   verified_at?: number;
   evidence_expires_at?: number;
   challenge_id?: string;
-  challenge_status?: "OPEN" | "UPHOLD" | "REVOKE" | "INSUFFICIENT_EVIDENCE";
+  challenge_status?: "OPEN" | "UPHOLD" | "REVOKE" | "STALE" | "INSUFFICIENT_EVIDENCE";
   last_challenge_id?: string;
   last_challenge_verdict_id?: string;
   invalidation_reason?: string;
@@ -74,6 +74,7 @@ export interface AuthenticityChallenge {
     | "OPEN"
     | "UPHOLD"
     | "REVOKE"
+    | "STALE"
     | "INSUFFICIENT_EVIDENCE"
     | "SUPERSEDED";
   created_at: number;
@@ -91,7 +92,8 @@ export interface AuthenticityVerdict {
     | "REJECTED"
     | "INSUFFICIENT_EVIDENCE"
     | "UPHOLD"
-    | "REVOKE";
+    | "REVOKE"
+    | "STALE";
   reason_code: string;
   summary: string;
   evidence_digest: string;

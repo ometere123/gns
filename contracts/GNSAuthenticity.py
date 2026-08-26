@@ -408,7 +408,7 @@ class GNSAuthenticity(gl.Contract):
             verification["last_challenge_resolved_at"] = now_ts
             if evidence_expires_at > 0:
                 verification["evidence_expires_at"] = evidence_expires_at
-        elif reason_code == "CLAIMANT_ATTESTATION_NO_LONGER_VALID":
+        elif decision == "STALE":
             # Loss of fresh claimant proof is staleness, not proof of fraud.
             claim["status"] = "INSUFFICIENT_EVIDENCE"
             verification["status"] = "STALE"
@@ -583,7 +583,7 @@ class GNSAuthenticity(gl.Contract):
         )
         if int(attestation.get("count", 0)) < 1:
             return {
-                "decision": "INSUFFICIENT_EVIDENCE",
+                "decision": "STALE",
                 "reason_code": "CLAIMANT_ATTESTATION_NO_LONGER_VALID",
                 "summary": "The previously verified source-bound wallet attestation can no longer be validated; freshness must be restored before the identity can remain authoritative.",
                 "evidence_digest": combined_digest,
@@ -808,8 +808,11 @@ class GNSAuthenticity(gl.Contract):
                 now_ts,
             )
             leader = leader_result.calldata
-            return str(leader.get("decision", "")) == str(
-                validator.get("decision", "")
+            return (
+                str(leader.get("decision", ""))
+                == str(validator.get("decision", ""))
+                and int(leader.get("evidence_expires_at", 0))
+                == int(validator.get("evidence_expires_at", 0))
             )
 
         result = gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
@@ -965,8 +968,11 @@ class GNSAuthenticity(gl.Contract):
                 now_ts,
             )
             leader = leader_result.calldata
-            return str(leader.get("decision", "")) == str(
-                validator.get("decision", "")
+            return (
+                str(leader.get("decision", ""))
+                == str(validator.get("decision", ""))
+                and int(leader.get("evidence_expires_at", 0))
+                == int(validator.get("evidence_expires_at", 0))
             )
 
         result = gl.vm.run_nondet_unsafe(leader_fn, validator_fn)

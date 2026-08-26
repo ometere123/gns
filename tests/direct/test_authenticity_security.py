@@ -286,7 +286,7 @@ def test_lost_claimant_attestation_becomes_stale_not_revoked(direct_deploy):
         verified_state(),
         "9",
         "12",
-        "INSUFFICIENT_EVIDENCE",
+        "STALE",
         "CLAIMANT_ATTESTATION_NO_LONGER_VALID",
         0,
         NOW,
@@ -294,4 +294,10 @@ def test_lost_claimant_attestation_becomes_stale_not_revoked(direct_deploy):
     assert transition["claim"]["status"] == "INSUFFICIENT_EVIDENCE"
     assert transition["verification"]["status"] == "STALE"
     assert transition["verification"]["verdict_id"] == "11"
+
+
+def test_consensus_compares_expiry_as_state_bearing_field():
+    source = Path("contracts/GNSAuthenticity.py").read_text()
+    comparison = 'and int(leader.get("evidence_expires_at", 0))'
+    assert source.count(comparison) == 2
 
