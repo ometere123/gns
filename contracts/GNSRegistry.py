@@ -1,4 +1,4 @@
-# v0.3.1
+# v0.3.2
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
 
 from genlayer import *
@@ -10,7 +10,7 @@ import json
 ROOT_SUFFIX = ".gen"
 SECONDS_PER_YEAR = 31536000
 REGISTRATION_RESERVATION_TTL = 1800
-CONTRACT_VERSION = "2.1.0-arc-usdc-reservations"
+CONTRACT_VERSION = "2.1.1-arc-usdc-reservations"
 ARC_CHAIN_ID = 5042002
 ARC_RPC_URL = "https://rpc.testnet.arc.network"
 ARC_PAYMENT_EVENT_TOPIC = "0x16246dce28fe193971c235293f898fe6af15aa3539719b24d894793343162838"
@@ -518,7 +518,7 @@ class GNSRegistry(gl.Contract):
     @gl.public.view
     def owner_of(self, label_or_name: str) -> str:
         obj = self._get_name_obj(self._normalise_full_name(label_or_name))
-        if obj is None:
+        if obj is None or self._is_expired_obj(obj):
             return ""
         return str(obj.get("owner", "")).lower()
 
@@ -737,21 +737,12 @@ class GNSRegistry(gl.Contract):
             raise gl.vm.UserError("Renewal duration must be between 1 and 5 years")
 
         full_name = self._normalise_full_name(label_or_name)
-        obj = self._require_owner(full_name)
-        if self._is_expired_obj(obj):
-            reservation = self._active_reservation(full_name)
-            if reservation is not None and str(reservation.get("reserver", "")).lower() != self._sender():
-                raise gl.vm.UserError("Expired name is reserved for a new registrant")
-
+        obj = self._require_active_owner(full_name)
         payment = self._verify_arc_payment(
             full_name, int(years), ACTION_RENEW, arc_tx_hash, int(arc_log_index)
         )
 
-        now = self._now()
-        current_expiry = int(obj.get("expires_at", now))
-        if current_expiry < now:
-            current_expiry = now
-
+        current_expiry = int(obj.get("expires_at", self._now()))
         self._consume_payment(payment)
         obj["expires_at"] = current_expiry + int(years) * SECONDS_PER_YEAR
         obj["status"] = "active"
