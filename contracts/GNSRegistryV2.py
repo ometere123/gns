@@ -14,6 +14,8 @@ MAX_EVIDENCE_SOURCES = 5
 MAX_URL_LEN = 300
 MAX_BODY_CHARS = 24000
 MAX_CONTEXT_CHARS = 4000
+MAX_ATTESTATION_LIFETIME_SECONDS = 7 * 24 * 60 * 60
+MAX_CLOCK_SKEW_SECONDS = 300
 
 
 class GNSRegistryV2(gl.Contract):
@@ -79,7 +81,9 @@ class GNSRegistryV2(gl.Contract):
         return str(gl.message.contract_address).lower()
 
     def _now(self) -> int:
-        return int(datetime.now(timezone.utc).timestamp())
+        raw = str(gl.message_raw["datetime"])
+        clean = raw.replace("Z", "+00:00")
+        return int(datetime.fromisoformat(clean).timestamp())
 
     def _dump(self, value) -> str:
         return json.dumps(value, sort_keys=True, separators=(",", ":"))
@@ -312,8 +316,17 @@ class GNSRegistryV2(gl.Contract):
                 source_ok = False
 
             try:
+                issued_at = int(parsed.get("issued_at", 0))
                 expires_at = int(parsed.get("expires_at", 0))
+                if issued_at <= 0 or expires_at <= 0:
+                    source_ok = False
+                if issued_at > now_ts + MAX_CLOCK_SKEW_SECONDS:
+                    source_ok = False
                 if expires_at <= now_ts:
+                    source_ok = False
+                if expires_at <= issued_at:
+                    source_ok = False
+                if expires_at - issued_at > MAX_ATTESTATION_LIFETIME_SECONDS:
                     source_ok = False
             except Exception:
                 source_ok = False
@@ -342,11 +355,14 @@ class GNSRegistryV2(gl.Contract):
             })
         return self._sha256_text(self._dump(digests))
 
-    def _safe_decision_json(self, raw: str, fallback_reason: str) -> dict:
+    def _safe_decision_json(self, raw, fallback_reason: str) -> dict:
         try:
-            parsed = json.loads(
-                raw.replace("```json", "").replace("```", "").strip()
-            )
+            if isinstance(raw, dict):
+                parsed = raw
+            else:
+                parsed = json.loads(
+                    str(raw).replace("```json", "").replace("```", "").strip()
+                )
             decision = str(parsed.get("decision", "")).upper()
             if decision not in [
                 "VERIFIED",
@@ -356,9 +372,12 @@ class GNSRegistryV2(gl.Contract):
                 "REVOKE",
             ]:
                 raise ValueError("invalid decision")
+            reason_code = str(parsed.get("reason_code", "")).strip().upper()
+            if reason_code == "" or len(reason_code) > 80:
+                raise ValueError("invalid reason code")
             return {
                 "decision": decision,
-                "reason_code": str(parsed.get("reason_code", "UNSPECIFIED"))[:80],
+                "reason_code": reason_code,
                 "summary": str(parsed.get("summary", ""))[:500],
             }
         except Exception:
@@ -576,6 +595,20 @@ class GNSRegistryV2(gl.Contract):
                 "evidence_digest": digest,
             }
 
+        successful_sources = 0
+        for item in fetched:
+            if bool(item.get("ok", False)):
+                successful_sources += 1
+
+        claim_type = str(claim.get("claim_type", ""))
+        if claim_type in ["project", "organization", "public_identity"] and successful_sources < 2:
+            return {
+                "decision": "INSUFFICIENT_EVIDENCE",
+                "reason_code": "CORROBORATION_REQUIRED",
+                "summary": "This claim type requires a wallet-bound attestation plus at least one additional retrievable source.",
+                "evidence_digest": digest,
+            }
+
         evidence_for_prompt = []
         for item in fetched:
             evidence_for_prompt.append({
@@ -602,7 +635,7 @@ class GNSRegistryV2(gl.Contract):
             '{"decision":"VERIFIED|REJECTED|INSUFFICIENT_EVIDENCE",'
             '"reason_code":"UPPER_SNAKE_CASE","summary":"short explanation"}'
         )
-        raw = gl.nondet.exec_prompt(prompt)
+        raw = gl.nondet.exec_prompt(prompt, response_format="json")
         judged = self._safe_decision_json(raw, "INVALID_MODEL_OUTPUT")
         if judged["decision"] not in ["VERIFIED", "REJECTED", "INSUFFICIENT_EVIDENCE"]:
             judged["decision"] = "INSUFFICIENT_EVIDENCE"
@@ -625,8 +658,13 @@ class GNSRegistryV2(gl.Contract):
             raise gl.vm.UserError("Only the claim owner can request verification")
 
         namespace = str(claim.get("namespace", ""))
+        if self.namespace_claims.get(namespace, "") != str(claim_id):
+            raise gl.vm.UserError("Claim has been superseded by a newer namespace claim")
+
         name_snapshot = self._require_name(namespace)
         policy_snapshot = str(claim.get("policy_version", ""))
+        if policy_snapshot != str(self.policy_version):
+            raise gl.vm.UserError("Claim policy is stale; create a new claim")
         current_subject_hash = self._subject_hash(
             namespace, name_snapshot, policy_snapshot
         )
@@ -653,10 +691,8 @@ class GNSRegistryV2(gl.Contract):
                 now_ts,
             )
             leader = leader_result.calldata
-            return (
-                str(leader.get("decision", "")) == str(validator.get("decision", ""))
-                and str(leader.get("reason_code", "")) == str(validator.get("reason_code", ""))
-                and str(leader.get("evidence_digest", "")) == str(validator.get("evidence_digest", ""))
+            return str(leader.get("decision", "")) == str(
+                validator.get("decision", "")
             )
 
         result = gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
@@ -725,6 +761,9 @@ class GNSRegistryV2(gl.Contract):
         claim = self._claim_obj(claim_id)
         if claim is None:
             raise gl.vm.UserError("Claim does not exist")
+        namespace = str(claim.get("namespace", ""))
+        if self.namespace_claims.get(namespace, "") != str(claim_id):
+            raise gl.vm.UserError("Only the latest namespace claim can be challenged")
         if str(claim.get("status", "")) != "VERIFIED":
             raise gl.vm.UserError("Only a verified claim can be challenged")
         if str(claim.get("active_challenge_id", "")) != "":
@@ -765,7 +804,6 @@ class GNSRegistryV2(gl.Contract):
         claim["status"] = "CHALLENGED"
         self._save_claim(str(claim_id), claim)
 
-        namespace = str(claim.get("namespace", ""))
         name_obj = self._require_name(namespace)
         verification = name_obj.get("verification", {})
         verification["status"] = "CHALLENGED"
@@ -848,7 +886,7 @@ class GNSRegistryV2(gl.Contract):
             '{"decision":"UPHOLD|REVOKE|INSUFFICIENT_EVIDENCE",'
             '"reason_code":"UPPER_SNAKE_CASE","summary":"short explanation"}'
         )
-        raw = gl.nondet.exec_prompt(prompt)
+        raw = gl.nondet.exec_prompt(prompt, response_format="json")
         judged = self._safe_decision_json(raw, "INVALID_MODEL_OUTPUT")
         if judged["decision"] not in ["UPHOLD", "REVOKE", "INSUFFICIENT_EVIDENCE"]:
             judged["decision"] = "INSUFFICIENT_EVIDENCE"
@@ -899,10 +937,8 @@ class GNSRegistryV2(gl.Contract):
                 now_ts,
             )
             leader = leader_result.calldata
-            return (
-                str(leader.get("decision", "")) == str(validator.get("decision", ""))
-                and str(leader.get("reason_code", "")) == str(validator.get("reason_code", ""))
-                and str(leader.get("evidence_digest", "")) == str(validator.get("evidence_digest", ""))
+            return str(leader.get("decision", "")) == str(
+                validator.get("decision", "")
             )
 
         result = gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
@@ -982,7 +1018,11 @@ class GNSRegistryV2(gl.Contract):
         if verification.get("status", "") == "VERIFIED":
             expected = str(verification.get("subject_hash", ""))
             policy = str(verification.get("policy_version", self.policy_version))
-            if expected != self._subject_hash(namespace, obj, policy):
+            if policy != str(self.policy_version):
+                verification["status"] = "STALE"
+                verification["invalidation_reason"] = "POLICY_VERSION_CHANGED"
+                obj["verification"] = verification
+            elif expected != self._subject_hash(namespace, obj, policy):
                 verification["status"] = "STALE"
                 verification["invalidation_reason"] = "SUBJECT_HASH_MISMATCH"
                 obj["verification"] = verification
