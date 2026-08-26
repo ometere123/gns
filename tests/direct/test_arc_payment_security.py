@@ -60,7 +60,7 @@ def test_root_namespace_normalization_matches_arc_router(direct_deploy):
 
 def test_reservation_is_wallet_and_terms_bound(direct_vm, direct_deploy):
     contract = deploy(direct_deploy)
-    direct_vm.set_sender(PAYER)
+    direct_vm.sender = PAYER
     first = contract.reserve_registration("papito", 2, PRIMARY)
     assert "Registration reserved" in first
     active = contract._active_reservation("papito.gen")
@@ -68,14 +68,14 @@ def test_reservation_is_wallet_and_terms_bound(direct_vm, direct_deploy):
     assert active["years"] == 2
     assert active["primary_address"] == PRIMARY
 
-    direct_vm.set_sender(OTHER)
+    direct_vm.sender = OTHER
     with direct_vm.expect_revert("Name is temporarily reserved by another wallet"):
         contract.reserve_registration("papito", 2, PRIMARY)
 
 
 def test_reserver_must_keep_same_terms_until_cancel(direct_vm, direct_deploy):
     contract = deploy(direct_deploy)
-    direct_vm.set_sender(PAYER)
+    direct_vm.sender = PAYER
     contract.reserve_registration("papito", 1, PRIMARY)
     with direct_vm.expect_revert("Cancel the current reservation"):
         contract.reserve_registration("papito", 2, PRIMARY)
