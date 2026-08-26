@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { RecordEditor } from "@/components/RecordEditor";
 import { LoadingState, ErrorState } from "@/components/States";
-import { VerifyProjectClaim } from "@/components/VerifyProjectClaim";
+import { AuthenticityClaimPanel } from "@/components/AuthenticityClaimPanel";
 import { SoulStampVerification } from "@/components/SoulStampVerification";
 import { useWallet } from "@/lib/wallet/WalletProvider";
 import { resolveName, renewName, transferName, setPrimaryName, quoteRenewal, weiToGen } from "@/lib/gns/contract";
@@ -122,6 +122,13 @@ export default function ManagePage({ params }: { params: Promise<{ name: string 
         isOwner={isOwner}
       />
 
+      <AuthenticityClaimPanel
+        fullName={data.full_name}
+        owner={data.owner}
+        records={data.records || {}}
+        isOwner={isOwner}
+      />
+
       <SoulStampVerification owner={data.owner} records={data.records || {}} />
 
       <div className="grid gap-4 lg:grid-cols-3">
@@ -166,8 +173,6 @@ export default function ManagePage({ params }: { params: Promise<{ name: string 
       </div>
 
       {message && <p className="text-sm text-muted">{message}</p>}
-
-      <VerifyProjectClaim fullName={data.full_name} disabled={!isOwner} />
     </div>
   );
 }
