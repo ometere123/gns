@@ -9,7 +9,6 @@ import type {
   ContractWriteResult,
   SearchResult,
   AiReview,
-  AiResult,
   AiSuggestion,
 } from "@/lib/types";
 
@@ -52,12 +51,9 @@ export async function resolveName(name: string): Promise<GnsName | null> {
 
 export async function searchName(query: string): Promise<SearchResult> {
   const fullName = normaliseName(query);
-  if (!fullName)
-    return { query, fullName, available: false, name: null };
+  if (!fullName) return { query, fullName, available: false, name: null };
   const name = await resolveName(fullName);
-  if (name) {
-    return { query, fullName, available: false, name };
-  }
+  if (name) return { query, fullName, available: false, name };
   return { query, fullName, available: true, name: null };
 }
 
@@ -88,8 +84,7 @@ export async function getRecords(name: string): Promise<GnsRecords> {
 
 export async function getTotalNames(): Promise<number> {
   try {
-    const v = await readView<number | string>("get_total_names", []);
-    return Number(v) || 0;
+    return Number(await readView<number | string>("get_total_names", [])) || 0;
   } catch {
     return 0;
   }
@@ -97,8 +92,7 @@ export async function getTotalNames(): Promise<number> {
 
 export async function getTotalReports(): Promise<number> {
   try {
-    const v = await readView<number | string>("get_total_reports", []);
-    return Number(v) || 0;
+    return Number(await readView<number | string>("get_total_reports", [])) || 0;
   } catch {
     return 0;
   }
@@ -147,34 +141,28 @@ export function genToWei(amount: string | number): bigint {
 }
 
 export async function getPricePerYear(): Promise<bigint> {
-  const v = await readView<unknown>("get_price_per_year", []);
-  return toBigInt(v);
+  return toBigInt(await readView<unknown>("get_price_per_year", []));
 }
 
 export async function quoteRegistration(years: number): Promise<bigint> {
   try {
-    const v = await readView<unknown>("quote_registration", [years]);
-    return toBigInt(v);
+    return toBigInt(await readView<unknown>("quote_registration", [years]));
   } catch {
-    const ppy = await getPricePerYear();
-    return ppy * BigInt(years);
+    return (await getPricePerYear()) * BigInt(years);
   }
 }
 
 export async function quoteRenewal(years: number): Promise<bigint> {
   try {
-    const v = await readView<unknown>("quote_renewal", [years]);
-    return toBigInt(v);
+    return toBigInt(await readView<unknown>("quote_renewal", [years]));
   } catch {
-    const ppy = await getPricePerYear();
-    return ppy * BigInt(years);
+    return (await getPricePerYear()) * BigInt(years);
   }
 }
 
 export async function getTreasury(): Promise<string> {
   try {
-    const v = await readView<string>("get_treasury", []);
-    return String(v || "");
+    return String((await readView<string>("get_treasury", [])) || "");
   } catch {
     return "";
   }
@@ -182,8 +170,7 @@ export async function getTreasury(): Promise<string> {
 
 export async function getAdmin(): Promise<string> {
   try {
-    const v = await readView<string>("get_admin", []);
-    return String(v || "");
+    return String((await readView<string>("get_admin", [])) || "");
   } catch {
     return "";
   }
@@ -191,8 +178,7 @@ export async function getAdmin(): Promise<string> {
 
 export async function getContractBalance(): Promise<bigint> {
   try {
-    const v = await readView<unknown>("get_contract_balance", []);
-    return toBigInt(v);
+    return toBigInt(await readView<unknown>("get_contract_balance", []));
   } catch {
     return 0n;
   }
@@ -200,8 +186,7 @@ export async function getContractBalance(): Promise<bigint> {
 
 export async function getTotalProtocolRevenue(): Promise<bigint> {
   try {
-    const v = await readView<unknown>("get_total_protocol_revenue", []);
-    return toBigInt(v);
+    return toBigInt(await readView<unknown>("get_total_protocol_revenue", []));
   } catch {
     return 0n;
   }
@@ -209,8 +194,7 @@ export async function getTotalProtocolRevenue(): Promise<bigint> {
 
 export async function getTotalWithdrawn(): Promise<bigint> {
   try {
-    const v = await readView<unknown>("get_total_withdrawn", []);
-    return toBigInt(v);
+    return toBigInt(await readView<unknown>("get_total_withdrawn", []));
   } catch {
     return 0n;
   }
@@ -223,58 +207,30 @@ export async function registerName(
 ): Promise<ContractWriteResult> {
   const label = normaliseName(name).replace(/\.gen$/, "");
   const value = await quoteRegistration(years);
-  const raw = await writeMethod("register", [label, years, primaryAddress], value);
-  return asWriteResult(raw);
+  return asWriteResult(await writeMethod("register", [label, years, primaryAddress], value));
 }
 
 export async function renewName(name: string, years: number): Promise<ContractWriteResult> {
   const value = await quoteRenewal(years);
-  const raw = await writeMethod("renew", [normaliseName(name), years], value);
-  return asWriteResult(raw);
+  return asWriteResult(await writeMethod("renew", [normaliseName(name), years], value));
 }
 
-export async function adminWithdraw(amountWei: bigint): Promise<ContractWriteResult> {
-  const raw = await writeMethod("admin_withdraw", [amountWei.toString()]);
-  return asWriteResult(raw);
+export async function transferName(name: string, newOwner: string): Promise<ContractWriteResult> {
+  return asWriteResult(await writeMethod("transfer", [normaliseName(name), newOwner]));
 }
 
-export async function adminSetPricePerYear(newPriceWei: bigint): Promise<ContractWriteResult> {
-  const raw = await writeMethod("admin_set_price_per_year", [newPriceWei.toString()]);
-  return asWriteResult(raw);
+export async function setRecords(name: string, records: GnsRecords): Promise<ContractWriteResult> {
+  return asWriteResult(
+    await writeMethod("set_records", [normaliseName(name), JSON.stringify(records)])
+  );
 }
 
-export async function adminSetTreasury(newTreasury: string): Promise<ContractWriteResult> {
-  const raw = await writeMethod("admin_set_treasury", [newTreasury]);
-  return asWriteResult(raw);
-}
-
-export async function transferName(
-  name: string,
-  newOwner: string
-): Promise<ContractWriteResult> {
-  const raw = await writeMethod("transfer", [normaliseName(name), newOwner]);
-  return asWriteResult(raw);
-}
-
-export async function setRecords(
-  name: string,
-  records: GnsRecords
-): Promise<ContractWriteResult> {
-  const raw = await writeMethod("set_records", [normaliseName(name), JSON.stringify(records)]);
-  return asWriteResult(raw);
-}
-
-export async function setPrimaryAddress(
-  name: string,
-  address: string
-): Promise<ContractWriteResult> {
-  const raw = await writeMethod("set_primary_address", [normaliseName(name), address]);
-  return asWriteResult(raw);
+export async function setPrimaryAddress(name: string, address: string): Promise<ContractWriteResult> {
+  return asWriteResult(await writeMethod("set_primary_address", [normaliseName(name), address]));
 }
 
 export async function setPrimaryName(name: string): Promise<ContractWriteResult> {
-  const raw = await writeMethod("set_primary_name", [normaliseName(name)]);
-  return asWriteResult(raw);
+  return asWriteResult(await writeMethod("set_primary_name", [normaliseName(name)]));
 }
 
 export async function createSubname(
@@ -282,37 +238,28 @@ export async function createSubname(
   subLabel: string,
   primaryAddress: string
 ): Promise<ContractWriteResult> {
-  const raw = await writeMethod("create_subname", [
-    normaliseName(parent),
-    subLabel,
-    primaryAddress,
-  ]);
-  return asWriteResult(raw);
+  return asWriteResult(
+    await writeMethod("create_subname", [normaliseName(parent), subLabel, primaryAddress])
+  );
 }
 
-export async function reportName(
-  name: string,
-  reason: string,
-  evidenceUrl: string,
-  comment: string
+export async function transferSubname(
+  subname: string,
+  newOwner: string
 ): Promise<ContractWriteResult> {
-  const raw = await writeMethod("report_name", [
-    normaliseName(name),
-    reason,
-    evidenceUrl,
-    comment,
-  ]);
-  return asWriteResult(raw);
+  return asWriteResult(
+    await writeMethod("transfer_subname", [normaliseName(subname), newOwner])
+  );
 }
 
-// ---------------------------------------------------------------------------
-// AI layer (Equivalence Principle, beta — labelled AI-assisted, not official)
-// ---------------------------------------------------------------------------
+// Legacy registry AI verdict writes are intentionally NOT exposed here anymore.
+// Authoritative identity verification and disputes live in authenticity.ts.
+// The one remaining AI method is advisory name generation; it cannot mutate
+// ownership, verification, dispute status, or protocol funds.
 
 export async function getTotalReviews(): Promise<number> {
   try {
-    const v = await readView<number | string>("get_total_reviews", []);
-    return Number(v) || 0;
+    return Number(await readView<number | string>("get_total_reviews", [])) || 0;
   } catch {
     return 0;
   }
@@ -326,73 +273,10 @@ export async function getAiReview(reviewId: string): Promise<AiReview | null> {
   return parsed as AiReview;
 }
 
-export async function getAiStatus(name: string): Promise<{ risk: string; verified: boolean; last_review_id: string } | null> {
-  try {
-    const raw = await readView<string>("get_ai_status", [normaliseName(name)]);
-    const parsed = parseJson<{ risk: string; verified: boolean; last_review_id: string } | Record<string, never>>(
-      raw,
-      {} as Record<string, never>
-    );
-    if (!parsed || !("risk" in parsed)) return null;
-    return parsed as { risk: string; verified: boolean; last_review_id: string };
-  } catch {
-    return null;
-  }
-}
-
 async function fetchLatestReview(): Promise<AiReview | null> {
   const total = await getTotalReviews();
   if (!total) return null;
   return getAiReview(String(total));
-}
-
-export async function aiReviewName(
-  name: string,
-  claim: string,
-  evidenceUrl: string,
-  extraContext: string
-): Promise<AiReview | null> {
-  await writeMethod("ai_review_name", [normaliseName(name), claim, evidenceUrl, extraContext]);
-  const status = await getAiStatus(name);
-  if (status?.last_review_id) {
-    const review = await getAiReview(status.last_review_id);
-    if (review) return review;
-  }
-  return fetchLatestReview();
-}
-
-export async function aiReviewReport(reportId: string): Promise<AiReview | null> {
-  await writeMethod("ai_review_report", [reportId]);
-  const report = await getReport(reportId);
-  if (report?.ai_review_id) {
-    const review = await getAiReview(report.ai_review_id);
-    if (review) return review;
-  }
-  return fetchLatestReview();
-}
-
-export async function aiVerifyProjectClaim(
-  name: string,
-  projectName: string,
-  officialWebsite: string,
-  officialX: string,
-  officialGithub: string,
-  explanation: string
-): Promise<AiReview | null> {
-  await writeMethod("ai_verify_project_claim", [
-    normaliseName(name),
-    projectName,
-    officialWebsite,
-    officialX,
-    officialGithub,
-    explanation,
-  ]);
-  const status = await getAiStatus(name);
-  if (status?.last_review_id) {
-    const review = await getAiReview(status.last_review_id);
-    if (review) return review;
-  }
-  return fetchLatestReview();
 }
 
 export async function aiSuggestNames(
@@ -402,37 +286,38 @@ export async function aiSuggestNames(
   await writeMethod("ai_suggest_names", [baseLabel, purpose]);
   const review = await fetchLatestReview();
   const result = review?.result as unknown as { suggestions?: AiSuggestion[] } | undefined;
-  if (result?.suggestions && Array.isArray(result.suggestions)) {
-    return result.suggestions;
-  }
-  return [];
+  return result?.suggestions && Array.isArray(result.suggestions) ? result.suggestions : [];
 }
 
-export function extractResult(review: AiReview | null): AiResult | null {
-  if (!review) return null;
-  return review.result || null;
+export async function adminWithdraw(amountWei: bigint): Promise<ContractWriteResult> {
+  return asWriteResult(await writeMethod("admin_withdraw", [amountWei.toString()]));
 }
 
-// ---------------------------------------------------------------------------
-// Admin methods (only effective for the contract admin address)
-// ---------------------------------------------------------------------------
+export async function adminSetPricePerYear(newPriceWei: bigint): Promise<ContractWriteResult> {
+  return asWriteResult(
+    await writeMethod("admin_set_price_per_year", [newPriceWei.toString()])
+  );
+}
+
+export async function adminSetTreasury(newTreasury: string): Promise<ContractWriteResult> {
+  return asWriteResult(await writeMethod("admin_set_treasury", [newTreasury]));
+}
 
 export async function adminFlagName(name: string, reason: string): Promise<ContractWriteResult> {
-  const raw = await writeMethod("admin_flag_name", [normaliseName(name), reason]);
-  return asWriteResult(raw);
+  return asWriteResult(await writeMethod("admin_flag_name", [normaliseName(name), reason]));
 }
 
 export async function adminUnflagName(name: string): Promise<ContractWriteResult> {
-  const raw = await writeMethod("admin_unflag_name", [normaliseName(name)]);
-  return asWriteResult(raw);
+  return asWriteResult(await writeMethod("admin_unflag_name", [normaliseName(name)]));
 }
 
-export async function adminSetReportStatus(reportId: string, status: string): Promise<ContractWriteResult> {
-  const raw = await writeMethod("admin_set_report_status", [reportId, status]);
-  return asWriteResult(raw);
+export async function adminSetReportStatus(
+  reportId: string,
+  status: string
+): Promise<ContractWriteResult> {
+  return asWriteResult(await writeMethod("admin_set_report_status", [reportId, status]));
 }
 
 export async function adminTransferAdmin(newAdmin: string): Promise<ContractWriteResult> {
-  const raw = await writeMethod("admin_transfer_admin", [newAdmin]);
-  return asWriteResult(raw);
+  return asWriteResult(await writeMethod("admin_transfer_admin", [newAdmin]));
 }
