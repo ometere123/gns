@@ -23,6 +23,7 @@ type Props = {
   disabled?: boolean;
   onFinalize: (receipt: ArcPaymentReceipt) => Promise<{ success: boolean; message: string }>;
   onSuccess?: () => void;
+  intentHash?: string;
 };
 
 function storageKey(action: string, name: string, years: number, address: string | null): string {
@@ -37,7 +38,7 @@ function toStored(receipt: ArcPaymentReceipt): StoredReceipt {
   return { ...receipt, amount: receipt.amount.toString() };
 }
 
-export function ArcPaymentFlow({ action, fullName, years, disabled, onFinalize, onSuccess }: Props) {
+export function ArcPaymentFlow({ action, fullName, years, disabled, onFinalize, onSuccess, intentHash }: Props) {
   const { address, switchToGenLayer } = useWallet();
   const [quote, setQuote] = useState<bigint | null>(null);
   const [receipt, setReceipt] = useState<ArcPaymentReceipt | null>(null);
@@ -78,7 +79,7 @@ export function ArcPaymentFlow({ action, fullName, years, disabled, onFinalize, 
   }, [key]);
 
   const pay = async () => {
-    if (!address) return;
+    if (!address || !intentHash) return;
     if (!ARC_PAYMENT_ROUTER_ADDRESS) {
       setMessage({ ok: false, text: "Arc payment router is not configured." });
       return;
@@ -87,8 +88,8 @@ export function ArcPaymentFlow({ action, fullName, years, disabled, onFinalize, 
     setMessage(null);
     try {
       const result = action === "register"
-        ? await payArcRegistration(address, fullName, years)
-        : await payArcRenewal(address, fullName, years);
+        ? await payArcRegistration(address, fullName, years, intentHash)
+        : await payArcRenewal(address, fullName, years, intentHash);
       if (result.payer.toLowerCase() !== address.toLowerCase()) throw new Error("Arc receipt payer does not match connected wallet.");
       if (result.years !== years) throw new Error("Arc receipt duration does not match this request.");
       setReceipt(result);

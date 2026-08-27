@@ -10,10 +10,11 @@ import json
 ROOT_SUFFIX = ".gen"
 SECONDS_PER_YEAR = 31536000
 REGISTRATION_RESERVATION_TTL = 1800
-CONTRACT_VERSION = "2.1.1-arc-usdc-reservations"
+RENEWAL_INTENT_TTL = 1800
+CONTRACT_VERSION = "2.2.0-arc-usdc-intents"
 ARC_CHAIN_ID = 5042002
 ARC_RPC_URL = "https://rpc.testnet.arc.network"
-ARC_PAYMENT_EVENT_TOPIC = "0x16246dce28fe193971c235293f898fe6af15aa3539719b24d894793343162838"
+ARC_PAYMENT_EVENT_TOPIC = "0x32ff84e5e01a8109e4619e0dde01c2df47463215310a78d3f37ad3d7fc70958b"
 ACTION_REGISTER = 1
 ACTION_RENEW = 2
 
@@ -40,11 +41,13 @@ class GNSRegistry(gl.Contract):
     reports: TreeMap[str, str]
     ai_reviews: TreeMap[str, str]
     consumed_payments: TreeMap[str, str]
+    renewal_intents: TreeMap[str, str]
 
     name_counter: u256
     report_counter: u256
     review_counter: u256
     payment_counter: u256
+    intent_counter: u256
 
     def __init__(self, arc_payment_router: str) -> None:
         self.admin = self._sender()
@@ -62,11 +65,13 @@ class GNSRegistry(gl.Contract):
         self.reports = TreeMap()
         self.ai_reviews = TreeMap()
         self.consumed_payments = TreeMap()
+        self.renewal_intents = TreeMap()
 
         self.name_counter = u256(0)
         self.report_counter = u256(0)
         self.review_counter = u256(0)
         self.payment_counter = u256(0)
+        self.intent_counter = u256(0)
 
     # ------------------------------------------------------------------
     # deterministic helpers
@@ -92,6 +97,16 @@ class GNSRegistry(gl.Contract):
 
     def _success(self, message: str, data) -> str:
         return self._dump({"success": True, "message": message, "data": data})
+
+    def _make_intent_hash(self, kind: str, namespace: str, owner: str, years: int,
+                          primary: str, created_at: int, expires_at: int,
+                          current_expiry: int, nonce: int) -> str:
+        payload = self._dump({"protocol": "gns-arc-payment-intent-v1", "kind": kind,
+            "namespace": namespace, "owner": owner.lower(), "years": int(years),
+            "primary_address": primary.lower(), "created_at": int(created_at),
+            "expires_at": int(expires_at), "current_expiry": int(current_expiry),
+            "nonce": int(nonce)})
+        return "0x" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
     def _clean_address(self, address: str, label: str) -> str:
         clean = str(address).strip().lower()
@@ -270,6 +285,17 @@ class GNSRegistry(gl.Contract):
     def _clear_reservation(self, full_name: str) -> None:
         self.registration_reservations[full_name] = ""
 
+    def _active_renewal_intent(self, full_name: str):
+        intent = self._load(self.renewal_intents.get(full_name, ""), None)
+        if intent is None:
+            return None
+        try:
+            if int(intent.get("expires_at", 0)) <= self._now():
+                return None
+        except Exception:
+            return None
+        return intent
+
     def _normalise_tx_hash(self, tx_hash: str) -> str:
         clean = str(tx_hash).strip().lower()
         if len(clean) != 66 or not clean.startswith("0x"):
@@ -364,6 +390,7 @@ class GNSRegistry(gl.Contract):
         action: int,
         arc_tx_hash: str,
         arc_log_index: int,
+        expected_intent_hash: str,
     ):
         if arc_log_index < 0:
             raise gl.vm.UserError("Invalid Arc log index")
@@ -418,12 +445,13 @@ class GNSRegistry(gl.Contract):
         event_action = self._hex_int(str(topics[3]))
 
         data = str(selected.get("data", "")).lower()
-        if not data.startswith("0x") or len(data) != 130:
+        if not data.startswith("0x") or len(data) != 194:
             raise gl.vm.UserError("Malformed Arc payment event data")
         body = data[2:]
         try:
             event_years = int(body[0:64], 16)
             amount = int(body[64:128], 16)
+            intent_hash = "0x" + body[128:192]
         except Exception:
             raise gl.vm.UserError("Malformed Arc payment event data")
 
@@ -437,6 +465,8 @@ class GNSRegistry(gl.Contract):
             raise gl.vm.UserError("Arc payment duration mismatch")
         if amount <= 0:
             raise gl.vm.UserError("Arc payment amount must be positive")
+        if intent_hash != str(expected_intent_hash).lower():
+            raise gl.vm.UserError("Arc payment intent mismatch")
 
         return {
             "key": key,
@@ -449,6 +479,7 @@ class GNSRegistry(gl.Contract):
             "action": event_action,
             "years": event_years,
             "amount_usdc_base_units": str(amount),
+            "intent_hash": intent_hash,
             "arc_block_number": block_number,
         }
 
@@ -487,6 +518,7 @@ class GNSRegistry(gl.Contract):
                 "event_topic": ARC_PAYMENT_EVENT_TOPIC,
                 "deterministic_finality": True,
                 "reservation_ttl_seconds": REGISTRATION_RESERVATION_TTL,
+                "renewal_intent_ttl_seconds": RENEWAL_INTENT_TTL,
                 "registrations_paused": bool(self.registrations_paused),
             }
         )
@@ -551,6 +583,8 @@ class GNSRegistry(gl.Contract):
             return ""
         obj = self._get_name_obj(full_name)
         if obj is None or self._is_expired_obj(obj):
+            return ""
+        if str(obj.get("owner", "")).lower() != str(address).strip().lower():
             return ""
         return full_name
 
@@ -636,14 +670,21 @@ class GNSRegistry(gl.Contract):
             )
 
         now = self._now()
+        self.intent_counter += u256(1)
+        intent_expiry = now + REGISTRATION_RESERVATION_TTL
         reservation = {
             "namespace": full_name,
             "reserver": self._sender(),
             "years": int(years),
             "primary_address": clean_primary,
             "created_at": now,
-            "expires_at": now + REGISTRATION_RESERVATION_TTL,
+            "expires_at": intent_expiry,
+            "intent_nonce": int(self.intent_counter),
         }
+        reservation["intent_hash"] = self._make_intent_hash(
+            "registration", full_name, self._sender(), int(years), clean_primary,
+            now, intent_expiry, 0, int(self.intent_counter)
+        )
         self.registration_reservations[full_name] = self._dump(reservation)
         return self._success("Registration reserved", reservation)
 
@@ -658,6 +699,38 @@ class GNSRegistry(gl.Contract):
             raise gl.vm.UserError("Only the reserver can cancel this reservation")
         self._clear_reservation(full_name)
         return self._success("Registration reservation cancelled", {})
+
+    @gl.public.write
+    def create_renewal_intent(self, label_or_name: str, years: u256) -> str:
+        if years < u256(1) or years > u256(5):
+            raise gl.vm.UserError("Renewal duration must be between 1 and 5 years")
+        full_name = self._normalise_full_name(label_or_name)
+        obj = self._require_active_owner(full_name)
+        existing = self._active_renewal_intent(full_name)
+        if existing is not None:
+            if int(existing.get("years", 0)) == int(years):
+                return self._success("Renewal intent already exists", existing)
+            raise gl.vm.UserError("Cancel or use the current renewal intent first")
+        now = self._now()
+        current_expiry = int(obj.get("expires_at", now))
+        self.intent_counter += u256(1)
+        intent = {
+            "namespace": full_name, "owner": self._sender(), "years": int(years),
+            "current_expiry": current_expiry, "created_at": now,
+            "expires_at": now + RENEWAL_INTENT_TTL, "intent_nonce": int(self.intent_counter),
+        }
+        intent["intent_hash"] = self._make_intent_hash(
+            "renewal", full_name, self._sender(), int(years),
+            str(obj.get("primary_address", "")), now,
+            now + RENEWAL_INTENT_TTL, current_expiry, int(self.intent_counter)
+        )
+        self.renewal_intents[full_name] = self._dump(intent)
+        return self._success("Renewal intent created", intent)
+
+    @gl.public.view
+    def get_renewal_intent(self, label_or_name: str) -> str:
+        intent = self._active_renewal_intent(self._normalise_full_name(label_or_name))
+        return self._dump(intent) if intent is not None else "{}"
 
     @gl.public.write
     def register(
@@ -694,7 +767,8 @@ class GNSRegistry(gl.Contract):
             raise gl.vm.UserError("Primary address does not match the reservation")
 
         payment = self._verify_arc_payment(
-            full_name, int(years), ACTION_REGISTER, arc_tx_hash, int(arc_log_index)
+            full_name, int(years), ACTION_REGISTER, arc_tx_hash, int(arc_log_index),
+            str(reservation.get("intent_hash", ""))
         )
 
         owner = self._sender()
@@ -714,16 +788,14 @@ class GNSRegistry(gl.Contract):
         was_new = existing is None
         if existing is not None:
             old_owner = str(existing.get("owner", "")).lower()
-            old_primary = str(existing.get("primary_address", "")).lower()
             if old_owner != "":
                 self._remove_owner_name(old_owner, full_name)
-            if old_primary != "" and self.reverse_records.get(old_primary, "") == full_name:
-                self.reverse_records[old_primary] = ""
+                if self.reverse_records.get(old_owner, "") == full_name:
+                    self.reverse_records[old_owner] = ""
 
         self._consume_payment(payment)
         self._save_name_obj(full_name, obj)
         self._add_owner_name(owner, full_name)
-        self.reverse_records[clean_primary] = full_name
         self._clear_reservation(full_name)
         if was_new:
             self.name_counter += u256(1)
@@ -743,8 +815,14 @@ class GNSRegistry(gl.Contract):
 
         full_name = self._normalise_full_name(label_or_name)
         obj = self._require_active_owner(full_name)
+        intent = self._active_renewal_intent(full_name)
+        if intent is None:
+            raise gl.vm.UserError("Create a renewal payment intent first")
+        if int(intent.get("years", 0)) != int(years):
+            raise gl.vm.UserError("Renewal duration does not match the intent")
         payment = self._verify_arc_payment(
-            full_name, int(years), ACTION_RENEW, arc_tx_hash, int(arc_log_index)
+            full_name, int(years), ACTION_RENEW, arc_tx_hash, int(arc_log_index),
+            str(intent.get("intent_hash", ""))
         )
 
         current_expiry = int(obj.get("expires_at", self._now()))
@@ -753,6 +831,7 @@ class GNSRegistry(gl.Contract):
         obj["status"] = "active"
         obj["last_renewal_payment"] = payment
         self._save_name_obj(full_name, obj)
+        self.renewal_intents[full_name] = ""
 
         return self._success("Name renewed from finalized Arc USDC payment", obj)
 
@@ -770,6 +849,8 @@ class GNSRegistry(gl.Contract):
         self._save_name_obj(full_name, obj)
         self._remove_owner_name(old_owner, full_name)
         self._add_owner_name(clean_new_owner, full_name)
+        if self.reverse_records.get(old_owner, "") == full_name:
+            self.reverse_records[old_owner] = ""
         return self._success("Name transferred", obj)
 
     @gl.public.write
@@ -777,12 +858,8 @@ class GNSRegistry(gl.Contract):
         full_name = self._normalise_full_name(label_or_name)
         obj = self._require_active_owner(full_name)
         clean = self._clean_address(address, "primary address")
-        old = str(obj.get("primary_address", "")).lower()
         obj["primary_address"] = clean
         self._save_name_obj(full_name, obj)
-        if old != "" and self.reverse_records.get(old, "") == full_name:
-            self.reverse_records[old] = ""
-        self.reverse_records[clean] = full_name
         return self._success("Primary address updated", obj)
 
     @gl.public.write
@@ -885,6 +962,8 @@ class GNSRegistry(gl.Contract):
         self._save_name_obj(full_name, obj)
         self._remove_owner_name(old_owner, full_name)
         self._add_owner_name(clean_new_owner, full_name)
+        if self.reverse_records.get(old_owner, "") == full_name:
+            self.reverse_records[old_owner] = ""
         return self._success("Subname transferred", obj)
 
     # ------------------------------------------------------------------

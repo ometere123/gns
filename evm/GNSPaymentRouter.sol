@@ -16,7 +16,7 @@ contract GNSPaymentRouter {
     uint8 public constant ACTION_RENEW = 2;
     uint256 public constant USDC_SCALE = 1e6;
     uint256 public constant MAX_PRICE_PER_YEAR = 1_000 * USDC_SCALE;
-    string public constant VERSION = "1.0.0-arc-usdc";
+    string public constant VERSION = "1.1.0-arc-usdc-intents";
 
     IERC20Minimal public immutable usdc;
 
@@ -39,7 +39,8 @@ contract GNSPaymentRouter {
         bytes32 indexed namespaceHash,
         uint8 indexed action,
         uint16 durationYears,
-        uint256 amount
+        uint256 amount,
+        bytes32 intentHash
     );
     event PricesUpdated(uint256 registrationPricePerYear, uint256 renewalPricePerYear);
     event PauseUpdated(bool paused);
@@ -60,6 +61,7 @@ contract GNSPaymentRouter {
     error TransferFailed();
     error InvalidAmount();
     error Reentrancy();
+    error InvalidIntent();
 
     modifier onlyAdmin() {
         if (msg.sender != admin) revert Unauthorized();
@@ -108,20 +110,28 @@ contract GNSPaymentRouter {
         return renewalPricePerYear * uint256(durationYears);
     }
 
-    function payRegistration(string calldata normalizedNamespace, uint16 durationYears)
-        external
-        nonReentrant
-        returns (uint256 amount)
-    {
-        return _pay(normalizedNamespace, durationYears, ACTION_REGISTER, registrationPricePerYear);
+    function payRegistration(
+        string calldata normalizedNamespace,
+        uint16 durationYears,
+        bytes32 intentHash
+    ) external nonReentrant returns (uint256 amount) {
+        return _pay(
+            normalizedNamespace,
+            durationYears,
+            intentHash,
+            ACTION_REGISTER,
+            registrationPricePerYear
+        );
     }
 
-    function payRenewal(string calldata normalizedNamespace, uint16 durationYears)
-        external
-        nonReentrant
-        returns (uint256 amount)
-    {
-        return _pay(normalizedNamespace, durationYears, ACTION_RENEW, renewalPricePerYear);
+    function payRenewal(
+        string calldata normalizedNamespace,
+        uint16 durationYears,
+        bytes32 intentHash
+    ) external nonReentrant returns (uint256 amount) {
+        return _pay(
+            normalizedNamespace, durationYears, intentHash, ACTION_RENEW, renewalPricePerYear
+        );
     }
 
     function setPrices(uint256 registrationPricePerYear_, uint256 renewalPricePerYear_)
@@ -205,12 +215,14 @@ contract GNSPaymentRouter {
     function _pay(
         string calldata normalizedNamespace,
         uint16 durationYears,
+        bytes32 intentHash,
         uint8 action,
         uint256 pricePerYear
     ) private returns (uint256 amount) {
         if (paused) revert Paused();
         _validateNamespace(normalizedNamespace);
         _validateYears(durationYears);
+        if (intentHash == bytes32(0)) revert InvalidIntent();
 
         amount = pricePerYear * uint256(durationYears);
         _safeTransferFrom(address(usdc), msg.sender, address(this), amount);
@@ -219,7 +231,12 @@ contract GNSPaymentRouter {
         paymentCount += 1;
 
         emit PaymentRecorded(
-            msg.sender, sha256(bytes(normalizedNamespace)), action, durationYears, amount
+            msg.sender,
+            sha256(bytes(normalizedNamespace)),
+            action,
+            durationYears,
+            amount,
+            intentHash
         );
     }
 

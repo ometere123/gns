@@ -20,7 +20,7 @@ The deployment script passes the Arc router constructor argument, waits for `FIN
 
 Verify:
 
-- `contract_version()` returns `2.1.1-arc-usdc-reservations`;
+- `contract_version()` returns `2.2.0-arc-usdc-intents`;
 - `get_arc_payment_config()` returns Arc chain ID `5042002` and the exact router;
 - reservation TTL is non-zero;
 - `get_admin()` is the intended registry admin.

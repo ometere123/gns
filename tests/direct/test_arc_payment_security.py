@@ -141,7 +141,7 @@ def test_receipt_security_guards_remain_in_source():
         'if event_action != action:',
         'if event_years != int(years):',
         'if amount <= 0:',
-        'if not data.startswith("0x") or len(data) != 130:',
+        'if not data.startswith("0x") or len(data) != 194:',
     ]
     for guard in required:
         assert guard in source

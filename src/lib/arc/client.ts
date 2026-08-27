@@ -14,13 +14,13 @@ export const ARC_PAYMENT_ROUTER_ADDRESS =
 export const USDC_DECIMALS = 6n;
 export const USDC_SCALE = 10n ** USDC_DECIMALS;
 export const PAYMENT_EVENT_TOPIC =
-  "0x16246dce28fe193971c235293f898fe6af15aa3539719b24d894793343162838";
+  "0x32ff84e5e01a8109e4619e0dde01c2df47463215310a78d3f37ad3d7fc70958b";
 
 const SELECTOR = {
   registrationPricePerYear: "65a4dd91",
   renewalPricePerYear: "a0982efa",
-  payRegistration: "9a252ee8",
-  payRenewal: "0f687407",
+  payRegistration: "b1b63df5",
+  payRenewal: "5fe82f02",
   admin: "f851a440",
   pendingAdmin: "26782247",
   treasury: "61d027b3",
@@ -53,6 +53,7 @@ export type ArcPaymentReceipt = {
   years: number;
   amount: bigint;
   blockNumber: number;
+  intentHash: string;
 };
 
 export type ArcRouterOverview = {
@@ -130,6 +131,15 @@ function encodeStringUint16(selector: string, text: string, years: number): stri
   const paddedLength = Math.ceil(body.length / 64) * 64;
   const tail = word(byteLength) + body.padEnd(paddedLength, "0");
   return `0x${selector}${word(64)}${word(years)}${tail}`;
+}
+
+function encodeStringUint16Bytes32(selector: string, text: string, years: number, intentHash: string): string {
+  if (!/^0x[0-9a-fA-F]{64}$/.test(intentHash)) throw new Error("Malformed Arc payment intent.");
+  const body = utf8Hex(text);
+  const byteLength = BigInt(body.length / 2);
+  const paddedLength = Math.ceil(body.length / 64) * 64;
+  const tail = word(byteLength) + body.padEnd(paddedLength, "0");
+  return `0x${selector}${word(96)}${word(years)}${intentHash.slice(2).toLowerCase()}${tail}`;
 }
 
 function encodeTwoUint(selector: string, first: bigint, second: bigint): string {
@@ -287,7 +297,7 @@ function parsePaymentReceipt(receipt: RpcReceipt, expectedAction: number): ArcPa
     if (action !== expectedAction) continue;
 
     const data = String(log.data || "").replace(/^0x/, "");
-    if (data.length < 128) throw new Error("Malformed Arc payment event data.");
+    if (data.length !== 192) throw new Error("Malformed Arc payment event data.");
     const years = Number(BigInt(`0x${data.slice(0, 64)}`));
     const amount = BigInt(`0x${data.slice(64, 128)}`);
     return {
@@ -299,12 +309,13 @@ function parsePaymentReceipt(receipt: RpcReceipt, expectedAction: number): ArcPa
       years,
       amount,
       blockNumber: Number(parseUint(receipt.blockNumber || "0x0")),
+      intentHash: `0x${data.slice(128, 192)}`,
     };
   }
   throw new Error("Arc transaction did not emit the expected GNS payment receipt.");
 }
 
-async function pay(owner: string, name: string, years: number, action: 1 | 2): Promise<ArcPaymentReceipt> {
+async function pay(owner: string, name: string, years: number, intentHash: string, action: 1 | 2): Promise<ArcPaymentReceipt> {
   const normalized = name.trim().toLowerCase();
   const quote = action === 1 ? await quoteArcRegistration(years) : await quoteArcRenewal(years);
   const balance = await getArcUsdcBalance(owner);
@@ -313,16 +324,16 @@ async function pay(owner: string, name: string, years: number, action: 1 | 2): P
   await ensureArcUsdcAllowance(owner, quote);
   await switchToArc();
   const selector = action === 1 ? SELECTOR.payRegistration : SELECTOR.payRenewal;
-  const hash = await sendTransaction(owner, routerAddress(), encodeStringUint16(selector, normalized, years));
+  const hash = await sendTransaction(owner, routerAddress(), encodeStringUint16Bytes32(selector, normalized, years, intentHash));
   return parsePaymentReceipt(await waitForArcReceipt(hash), action);
 }
 
-export function payArcRegistration(owner: string, name: string, years: number): Promise<ArcPaymentReceipt> {
-  return pay(owner, name, years, 1);
+export function payArcRegistration(owner: string, name: string, years: number, intentHash: string): Promise<ArcPaymentReceipt> {
+  return pay(owner, name, years, intentHash, 1);
 }
 
-export function payArcRenewal(owner: string, name: string, years: number): Promise<ArcPaymentReceipt> {
-  return pay(owner, name, years, 2);
+export function payArcRenewal(owner: string, name: string, years: number, intentHash: string): Promise<ArcPaymentReceipt> {
+  return pay(owner, name, years, intentHash, 2);
 }
 
 export async function readArcRouterOverview(): Promise<ArcRouterOverview> {

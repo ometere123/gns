@@ -75,6 +75,7 @@ export type ArcPaymentConfig = {
   event_topic: string;
   deterministic_finality: boolean;
   reservation_ttl_seconds: number;
+  renewal_intent_ttl_seconds: number;
   registrations_paused: boolean;
 };
 
@@ -85,6 +86,7 @@ export type RegistrationReservation = {
   primary_address: string;
   created_at: number;
   expires_at: number;
+  intent_hash: string;
 };
 
 export async function isAvailable(name: string): Promise<boolean> {
@@ -190,6 +192,7 @@ export async function getArcPaymentConfig(): Promise<ArcPaymentConfig> {
       event_topic: "",
       deterministic_finality: false,
       reservation_ttl_seconds: 0,
+      renewal_intent_ttl_seconds: 0,
       registrations_paused: false,
     }
   );
@@ -241,6 +244,10 @@ export async function cancelRegistrationReservation(
   return finalizedRegistryWrite("cancel_registration_reservation", [
     normaliseName(name),
   ]);
+}
+
+export async function createRenewalIntent(name: string, years: number): Promise<ContractWriteResult> {
+  return finalizedRegistryWrite("create_renewal_intent", [normaliseName(name), years]);
 }
 
 export async function registerName(

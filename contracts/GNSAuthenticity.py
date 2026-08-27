@@ -7,7 +7,7 @@ import hashlib
 import json
 
 
-CONTRACT_VERSION = "2.0.0-authenticity-alpha"
+CONTRACT_VERSION = "2.1.0-authenticity-refresh"
 DEFAULT_POLICY_VERSION = "gns-auth-v2"
 ATTESTATION_PROTOCOL = "gns-claim-v2"
 MAX_EVIDENCE_SOURCES = 5
@@ -29,6 +29,7 @@ class GNSAuthenticity(gl.Contract):
     """
 
     admin: str
+    pending_admin: str
     registry_address: str
     policy_version: str
 
@@ -44,6 +45,7 @@ class GNSAuthenticity(gl.Contract):
 
     def __init__(self, registry_address: str) -> None:
         self.admin = self._sender()
+        self.pending_admin = ""
         self.registry_address = self._clean_address(registry_address, "registry address")
         self.policy_version = DEFAULT_POLICY_VERSION
         self.claims = TreeMap()
@@ -794,6 +796,7 @@ class GNSAuthenticity(gl.Contract):
             "PENDING_EVIDENCE",
             "REJECTED",
             "INSUFFICIENT_EVIDENCE",
+            "VERIFIED",
         ]:
             raise gl.vm.UserError("Claim is not eligible for verification")
         if self._sender() != str(claim.get("owner", "")).lower():
@@ -875,6 +878,22 @@ class GNSAuthenticity(gl.Contract):
             }
         )
         return self._dump({"success": True, "verdict": verdict})
+
+    @gl.public.write
+    def refresh_verified_claim(self, claim_id: str) -> str:
+        claim = self._claim_obj(claim_id)
+        if claim is None or str(claim.get("status", "")) != "VERIFIED":
+            raise gl.vm.UserError("Only a verified claim can be refreshed")
+        namespace = str(claim.get("namespace", ""))
+        previous_claim = self._dump(claim)
+        previous_verification = self.namespace_verifications.get(namespace, "{}")
+        result = self.verify_claim(claim_id)
+        parsed = self._load(result, {})
+        verdict = parsed.get("verdict", {}) if isinstance(parsed, dict) else {}
+        if str(verdict.get("decision", "")) != "VERIFIED":
+            self.claims[str(claim_id)] = previous_claim
+            self.namespace_verifications[namespace] = previous_verification
+        return result
 
     # ------------------------------------------------------------------
     # Challenge lifecycle
@@ -1144,7 +1163,33 @@ class GNSAuthenticity(gl.Contract):
         return self._dump({"success": True, "policy_version": clean})
 
     @gl.public.write
-    def admin_transfer_admin(self, new_admin: str) -> str:
+    def admin_propose_admin(self, new_admin: str) -> str:
         self._require_admin()
-        self.admin = self._clean_address(new_admin, "new admin")
-        return self._dump({"success": True, "admin": self.admin})
+        clean = self._clean_address(new_admin, "new admin")
+        if clean == self.admin:
+            raise gl.vm.UserError("New admin must differ from current admin")
+        self.pending_admin = clean
+        return self._dump({"success": True, "pending_admin": clean})
+
+    @gl.public.write
+    def admin_cancel_admin_transfer(self) -> str:
+        self._require_admin()
+        self.pending_admin = ""
+        return self._dump({"success": True, "pending_admin": ""})
+
+    @gl.public.write
+    def accept_admin(self) -> str:
+        if self._sender() != str(self.pending_admin).lower() or self.pending_admin == "":
+            raise gl.vm.UserError("Only the pending admin can accept")
+        previous = self.admin
+        self.admin = self._sender()
+        self.pending_admin = ""
+        return self._dump({"success": True, "previous_admin": previous, "admin": self.admin})
+
+    @gl.public.view
+    def get_admin(self) -> str:
+        return self.admin
+
+    @gl.public.view
+    def get_pending_admin(self) -> str:
+        return self.pending_admin

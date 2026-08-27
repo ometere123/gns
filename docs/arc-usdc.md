@@ -17,7 +17,7 @@ Arc Testnet:
 
 GNS router event:
 
-`PaymentRecorded(address,bytes32,uint8,uint16,uint256)`
+`PaymentRecorded(address,bytes32,uint8,uint16,uint256,bytes32)`
 
 Topic:
 
@@ -117,7 +117,7 @@ The script must:
 - require successful execution;
 - record the resulting public registry address locally.
 
-Verify `contract_version()` returns `2.1.1-arc-usdc-reservations` and `get_arc_payment_config()` reports the exact Arc router.
+Verify `contract_version()` returns `2.2.0-arc-usdc-intents` and `get_arc_payment_config()` reports the exact Arc router and intent TTL.
 
 ## 7. Deploy fresh authenticity
 
@@ -138,7 +138,7 @@ The safe registration order is deliberately **GenLayer first, then Arc, then Gen
 5. read `get_registration_reservation(namespace)` and confirm wallet, years and primary address all match;
 6. switch to Arc;
 7. approve the router's exact USDC requirement if allowance is insufficient;
-8. call `payRegistration(namespace, years)`;
+8. call `payRegistration(namespace, years, intentHash)`;
 9. wait for the successful Arc receipt;
 10. capture the `PaymentRecorded` log index;
 11. switch back to GenLayer;
@@ -168,7 +168,7 @@ Arc has deterministic BFT finality and no reorgs after a committed block. The Ge
 
 ## 9. Renewal smoke test
 
-Renewal does not create new ownership. The current GenLayer owner pays `payRenewal(namespace, years)` on Arc, then calls registry `renew(...)` with the receipt reference.
+Renewal does not create new ownership. The current GenLayer owner first creates a renewal intent, pays `payRenewal(namespace, years, intentHash)` on Arc, then calls registry `renew(...)` with the receipt reference.
 
 Confirm:
 

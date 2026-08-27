@@ -71,7 +71,7 @@ contract ReentrantUSDC {
     }
 
     function transferFrom(address, address, uint256) external returns (bool) {
-        try router.payRegistration("reentrant.gen", 1) {
+        try router.payRegistration("reentrant.gen", 1, bytes32(uint256(1))) {
             reentryBlocked = false;
         } catch {
             reentryBlocked = true;
@@ -89,14 +89,14 @@ contract Actor {
         external
         returns (uint256)
     {
-        return router.payRegistration(name, durationYears);
+        return router.payRegistration(name, durationYears, bytes32(uint256(1)));
     }
 
     function payRenewal(GNSPaymentRouter router, string calldata name, uint16 durationYears)
         external
         returns (uint256)
     {
-        return router.payRenewal(name, durationYears);
+        return router.payRenewal(name, durationYears, bytes32(uint256(1)));
     }
 
     function acceptAdmin(GNSPaymentRouter router) external {
@@ -295,6 +295,16 @@ contract GNSPaymentRouterTest {
                 abi.encodeWithSelector(Actor.payRenewal.selector, router, "papito.gen", uint16(6))
             );
         require(!ok, "six payment years accepted");
+    }
+
+    function testZeroPaymentIntentRejected() public {
+        (bool ok,) = address(router)
+            .call(
+                abi.encodeWithSignature(
+                    "payRegistration(string,uint16,bytes32)", "papito.gen", 1, bytes32(0)
+                )
+            );
+        require(!ok, "zero intent accepted");
     }
 
     function testFalseReturningTokenFailsClosed() public {

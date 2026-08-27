@@ -11,7 +11,7 @@ import { LoadingState, ErrorState } from "@/components/States";
 import { AuthenticityClaimPanel } from "@/components/AuthenticityClaimPanel";
 import { SoulStampVerification } from "@/components/SoulStampVerification";
 import { useWallet } from "@/lib/wallet/WalletProvider";
-import { resolveName, renewName, transferName, setPrimaryName } from "@/lib/gns/contract";
+import { resolveName, renewName, transferName, setPrimaryName, createRenewalIntent } from "@/lib/gns/contract";
 import { normaliseName, formatExpiry } from "@/lib/utils";
 import type { GnsName } from "@/lib/types";
 
@@ -26,6 +26,7 @@ export default function ManagePage({ params }: { params: Promise<{ name: string 
   const [newOwner, setNewOwner] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [renewalIntent, setRenewalIntent] = useState<string | null>(null);
 
   const load = () => {
     setLoading(true);
@@ -71,6 +72,18 @@ export default function ManagePage({ params }: { params: Promise<{ name: string 
     } finally {
       setBusy(null);
     }
+  };
+
+  const prepareRenewal = async () => {
+    setBusy("intent"); setMessage(null);
+    try {
+      const result = await createRenewalIntent(fullName, years);
+      const data = result.data as { intent_hash?: string } | undefined;
+      if (!data?.intent_hash) throw new Error("Renewal intent was not returned.");
+      setRenewalIntent(data.intent_hash);
+      setMessage(result.message);
+    } catch (e) { setMessage(e instanceof Error ? e.message : "Could not prepare renewal."); }
+    finally { setBusy(null); }
   };
 
   if (loading) return <LoadingState />;
@@ -142,10 +155,12 @@ export default function ManagePage({ params }: { params: Promise<{ name: string 
           action="renew"
           fullName={fullName}
           years={years}
-          disabled={!isActiveOwner}
+          intentHash={renewalIntent || undefined}
+          disabled={!isActiveOwner || !renewalIntent}
           onFinalize={(receipt) => renewName(fullName, years, receipt.txHash, receipt.logIndex)}
           onSuccess={load}
         />
+        {isActiveOwner && !renewalIntent && <Button size="sm" onClick={prepareRenewal} loading={busy === "intent"}>Prepare renewal intent</Button>}
         {!isActiveOwner && <p className="text-xs text-muted">Only the current active namespace owner can renew this name.</p>}
       </Card>
       )}

@@ -36,8 +36,8 @@ A successful Arc payment is **not** namespace ownership. Ownership exists only a
 4. Only after that reservation exists does the frontend enable Arc payment.
 5. The frontend reads the current registration price from `GNSPaymentRouter`.
 6. User approves the exact required USDC allowance if necessary.
-7. User calls `payRegistration(namespace, years)` on Arc.
-8. The router transfers USDC and emits `PaymentRecorded(address,bytes32,uint8,uint16,uint256)`.
+7. User creates a GenLayer-bound payment intent and calls `payRegistration(namespace, years, intentHash)` on Arc.
+8. The router transfers USDC and emits `PaymentRecorded(address,bytes32,uint8,uint16,uint256,bytes32)`.
 9. The frontend stores the Arc transaction hash and payment-event log index so an interrupted flow can resume without another payment.
 10. User returns to GenLayer and calls `register(...)` with the Arc receipt reference.
 11. GenLayer validators independently fetch the Arc transaction receipt through JSON-RPC.
@@ -77,7 +77,7 @@ The Arc admin cannot modify `.gen` ownership or authenticity verdicts. The treas
 
 ### `contracts/GNSRegistry.py`
 
-GenLayer namespace source of truth. Current v3 version: `2.1.1-arc-usdc-reservations`.
+GenLayer namespace source of truth. Current v3 version: `2.2.0-arc-usdc-intents`.
 
 Responsibilities include ownership, expiry, records, reverse lookup, transfers, subnames, registration reservations, deterministic reports/admin controls, Arc receipt verification and one-time receipt consumption.
 
