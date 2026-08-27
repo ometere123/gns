@@ -11,7 +11,7 @@ import { LoadingState, ErrorState } from "@/components/States";
 import { AuthenticityClaimPanel } from "@/components/AuthenticityClaimPanel";
 import { SoulStampVerification } from "@/components/SoulStampVerification";
 import { useWallet } from "@/lib/wallet/WalletProvider";
-import { resolveName, renewName, transferName, setPrimaryName, createRenewalIntent } from "@/lib/gns/contract";
+import { resolveName, renewName, transferName, setPrimaryName, createRenewalIntent, getRenewalIntent } from "@/lib/gns/contract";
 import { normaliseName, formatExpiry } from "@/lib/utils";
 import type { GnsName } from "@/lib/types";
 
@@ -26,7 +26,7 @@ export default function ManagePage({ params }: { params: Promise<{ name: string 
   const [newOwner, setNewOwner] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [renewalIntent, setRenewalIntent] = useState<string | null>(null);
+  const [renewalIntent, setRenewalIntent] = useState<{ hash: string; expiresAt: number } | null>(null);
 
   const load = () => {
     setLoading(true);
@@ -80,7 +80,9 @@ export default function ManagePage({ params }: { params: Promise<{ name: string 
       const result = await createRenewalIntent(fullName, years);
       const data = result.data as { intent_hash?: string } | undefined;
       if (!data?.intent_hash) throw new Error("Renewal intent was not returned.");
-      setRenewalIntent(data.intent_hash);
+      const current = await getRenewalIntent(fullName);
+      if (!current) throw new Error("Finalized renewal intent could not be read back.");
+      setRenewalIntent({ hash: current.intent_hash, expiresAt: current.expires_at });
       setMessage(result.message);
     } catch (e) { setMessage(e instanceof Error ? e.message : "Could not prepare renewal."); }
     finally { setBusy(null); }
@@ -155,7 +157,8 @@ export default function ManagePage({ params }: { params: Promise<{ name: string 
           action="renew"
           fullName={fullName}
           years={years}
-          intentHash={renewalIntent || undefined}
+          intentHash={renewalIntent?.hash}
+          intentExpiresAt={renewalIntent?.expiresAt}
           disabled={!isActiveOwner || !renewalIntent}
           onFinalize={(receipt) => renewName(fullName, years, receipt.txHash, receipt.logIndex)}
           onSuccess={load}

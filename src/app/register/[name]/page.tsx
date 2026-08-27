@@ -288,6 +288,7 @@ export default function RegisterPage({ params }: { params: Promise<{ name: strin
                   fullName={fullName}
                   years={years}
                   intentHash={reservation?.intent_hash}
+                  intentExpiresAt={reservation?.expires_at}
                   disabled={!primaryValid || !reservationMatches || !reservation?.intent_hash}
                   onFinalize={(receipt: ArcPaymentReceipt) =>
                     registerName(fullName, years, primary || address, receipt.txHash, receipt.logIndex)

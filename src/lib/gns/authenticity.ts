@@ -162,7 +162,7 @@ export function buildWalletBoundAttestation(
   }
   const issuedAt = options?.issuedAt ?? Math.floor(Date.now() / 1000);
   const ttlSeconds = Math.min(
-    Math.max(options?.ttlSeconds ?? 3600, 60),
+    Math.max(options?.ttlSeconds ?? 6 * 24 * 60 * 60, 60),
     7 * 24 * 60 * 60
   );
   return {
@@ -195,6 +195,17 @@ export async function verifyAuthenticityClaim(
   if (!claim.verdict_id) throw new Error("Finalized claim has no verdict id.");
   const verdict = await getAuthenticityVerdict(claim.verdict_id);
   if (!verdict) throw new Error("Finalized claim verdict could not be read.");
+  return { claim, verdict };
+}
+
+export async function refreshVerifiedAuthenticityClaim(
+  claimId: string
+): Promise<{ claim: AuthenticityClaim; verdict: AuthenticityVerdict }> {
+  await writeFinalized("refresh_verified_claim", [claimId]);
+  const claim = await getAuthenticityClaim(claimId);
+  if (!claim?.verdict_id) throw new Error("Refresh finalized without a verdict id.");
+  const verdict = await getAuthenticityVerdict(claim.verdict_id);
+  if (!verdict) throw new Error("Refreshed claim verdict could not be read.");
   return { claim, verdict };
 }
 

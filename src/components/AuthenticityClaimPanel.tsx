@@ -13,6 +13,7 @@ import {
   getNamespaceAuthenticityClaim,
   getNamespaceVerification,
   isAuthenticityConfigured,
+  refreshVerifiedAuthenticityClaim,
   serializeWalletBoundAttestation,
   verifyAuthenticityClaim,
 } from "@/lib/gns/authenticity";
@@ -92,6 +93,7 @@ export function AuthenticityClaimPanel({
   const [context, setContext] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [attestationIssuedAt, setAttestationIssuedAt] = useState<number | undefined>(undefined);
 
   const load = async () => {
     if (!configured) return;
@@ -114,8 +116,8 @@ export function AuthenticityClaimPanel({
   }, [fullName, configured]);
 
   const attestationJson = useMemo(
-    () => (claim ? serializeWalletBoundAttestation(claim) : ""),
-    [claim]
+    () => (claim ? serializeWalletBoundAttestation(claim, { issuedAt: attestationIssuedAt }) : ""),
+    [claim, attestationIssuedAt]
   );
 
   const createClaim = async () => {
@@ -154,6 +156,23 @@ export function AuthenticityClaimPanel({
       setVerification(await getNamespaceVerification(fullName));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Verification failed.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const refreshVerified = async () => {
+    if (!claim) return;
+    setBusy("refresh");
+    setError(null);
+    try {
+      setAttestationIssuedAt(Math.floor(Date.now() / 1000));
+      const result = await refreshVerifiedAuthenticityClaim(claim.id);
+      setClaim(result.claim);
+      setVerdict(result.verdict);
+      setVerification(await getNamespaceVerification(fullName));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Evidence refresh failed.");
     } finally {
       setBusy(null);
     }
@@ -259,6 +278,29 @@ export function AuthenticityClaimPanel({
               </div>
             </div>
           ) : null}
+
+          {claim.status === "VERIFIED" && (
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-4">
+              <p className="font-medium text-ink">Refresh verified evidence</p>
+              <p className="mt-1 text-xs text-muted">
+                Generate this fresh six-day attestation, publish it at the claim&apos;s existing source URL, then run the validator-backed refresh. This is separate from recomputing namespace status.
+              </p>
+              <pre className="mt-3 max-h-56 overflow-auto whitespace-pre-wrap break-all rounded-md border border-borderGrey bg-white p-3 text-xs text-ink">
+                {attestationJson}
+              </pre>
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <CopyButton value={attestationJson} label="Copy fresh JSON" />
+                <Button onClick={refreshVerified} loading={busy === "refresh"} disabled={!isOwner}>
+                  Refresh with published evidence
+                </Button>
+              </div>
+              {verification?.evidence_expires_at && (
+                <p className="mt-2 text-xs text-muted">
+                  Current evidence expires {new Date(verification.evidence_expires_at * 1000).toLocaleString()}.
+                </p>
+              )}
+            </div>
+          )}
 
           {verdict && (
             <div className="rounded-lg border border-borderGrey p-4 text-sm">

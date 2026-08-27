@@ -190,3 +190,84 @@ def test_registry_no_longer_contains_commercial_gen_fee_path():
     assert "admin_withdraw" not in source
     assert "@gl.public.write.payable" not in source
     assert "gl.message.value" not in source
+
+
+def test_reverse_lookup_is_explicit_owner_controlled(direct_vm, direct_deploy):
+    contract = deploy(direct_deploy)
+    now = contract._now()
+    owner = PAYER
+    victim = PRIMARY
+    obj = contract._make_name_object(
+        "reverse", "reverse.gen", "", False, owner, victim,
+        now, now + 1000, {},
+    )
+    contract._save_name_obj("reverse.gen", obj)
+    contract._add_owner_name(owner, "reverse.gen")
+
+    # Forward primary metadata cannot grant reverse identity.
+    assert contract.reverse_lookup(victim) == ""
+    direct_vm.sender = owner
+    contract.set_primary_name("reverse.gen")
+    assert contract.reverse_lookup(owner) == "reverse.gen"
+
+    contract.set_primary_address("reverse.gen", OTHER)
+    assert contract.reverse_lookup(owner) == "reverse.gen"
+    direct_vm.sender = owner
+    contract.transfer("reverse.gen", OTHER)
+    assert contract.reverse_lookup(owner) == ""
+    assert contract.reverse_lookup(OTHER) == ""
+
+
+def test_intents_are_nonzero_and_registry_domain_separated(direct_vm, direct_deploy):
+    first = deploy(direct_deploy)
+    direct_vm.sender = PAYER
+    reservation = json.loads(first.reserve_registration("domainone", 1, PRIMARY))
+    assert reservation["data"]["intent_hash"].startswith("0x")
+    assert len(reservation["data"]["intent_hash"]) == 66
+
+    first_hash = first._make_intent_hash(
+        "registration", "domainone.gen", PAYER, 1, PRIMARY, 10, 20, 0, 1
+    )
+    assert first_hash != first._make_intent_hash_for_registry(
+        "0x" + "1" * 40, "registration", "domainone.gen", PAYER, 1,
+        PRIMARY, 10, 20, 0, 1
+    )
+    assert first_hash != first._make_intent_hash("registration", "domainone.gen", PAYER, 1,
+                                   PRIMARY, 10, 20, 0, 2)
+
+
+def test_transfer_invalidates_renewal_intent(direct_vm, direct_deploy):
+    contract = deploy(direct_deploy)
+    now = contract._now()
+    obj = contract._make_name_object(
+        "renewal", "renewal.gen", "", False, PAYER, PRIMARY,
+        now, now + 1000, {},
+    )
+    contract._save_name_obj("renewal.gen", obj)
+    contract._add_owner_name(PAYER, "renewal.gen")
+    direct_vm.sender = PAYER
+    created = json.loads(contract.create_renewal_intent("renewal.gen", 1))
+    assert created["data"]["intent_hash"]
+    contract.transfer("renewal.gen", OTHER)
+    assert contract.get_renewal_intent("renewal.gen") == "{}"
+
+
+def test_expired_subname_replacement_clears_old_owner_reverse(direct_vm, direct_deploy):
+    contract = deploy(direct_deploy)
+    now = contract._now()
+    parent = contract._make_name_object(
+        "parent", "parent.gen", "", False, PAYER, PRIMARY,
+        now, now + 1000, {},
+    )
+    contract._save_name_obj("parent.gen", parent)
+    contract._add_owner_name(PAYER, "parent.gen")
+    expired = contract._make_name_object(
+        "child", "child.parent.gen", "parent.gen", True, PAYER, PRIMARY,
+        now - 1000, now - 1, {},
+    )
+    contract._save_name_obj("child.parent.gen", expired)
+    contract._add_owner_name(PAYER, "child.parent.gen")
+    contract.reverse_records[PAYER] = "child.parent.gen"
+    direct_vm.sender = PAYER
+    contract.create_subname("parent.gen", "child", OTHER)
+    assert contract.reverse_records.get(PAYER, "") == ""

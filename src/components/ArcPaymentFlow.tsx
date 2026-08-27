@@ -24,10 +24,13 @@ type Props = {
   onFinalize: (receipt: ArcPaymentReceipt) => Promise<{ success: boolean; message: string }>;
   onSuccess?: () => void;
   intentHash?: string;
+  intentExpiresAt?: number;
 };
 
-function storageKey(action: string, name: string, years: number, address: string | null): string {
-  return `gns:arc-payment:${action}:${name.toLowerCase()}:${years}:${(address || "").toLowerCase()}`;
+const PAYMENT_SAFETY_BUFFER_SECONDS = 5 * 60;
+
+function storageKey(action: string, name: string, years: number, address: string | null, intentHash?: string): string {
+  return `gns:arc-payment:${action}:${name.toLowerCase()}:${years}:${(address || "").toLowerCase()}:${(intentHash || "").toLowerCase()}`;
 }
 
 function fromStored(raw: StoredReceipt): ArcPaymentReceipt {
@@ -38,14 +41,23 @@ function toStored(receipt: ArcPaymentReceipt): StoredReceipt {
   return { ...receipt, amount: receipt.amount.toString() };
 }
 
-export function ArcPaymentFlow({ action, fullName, years, disabled, onFinalize, onSuccess, intentHash }: Props) {
+export function ArcPaymentFlow({ action, fullName, years, disabled, onFinalize, onSuccess, intentHash, intentExpiresAt }: Props) {
   const { address, switchToGenLayer } = useWallet();
   const [quote, setQuote] = useState<bigint | null>(null);
   const [receipt, setReceipt] = useState<ArcPaymentReceipt | null>(null);
   const [busy, setBusy] = useState<"pay" | "finalize" | null>(null);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
 
-  const key = useMemo(() => storageKey(action, fullName, years, address), [action, fullName, years, address]);
+  const key = useMemo(() => storageKey(action, fullName, years, address, intentHash), [action, fullName, years, address, intentHash]);
+  const intentHasSafetyMargin = Boolean(
+    intentExpiresAt && intentExpiresAt > now + PAYMENT_SAFETY_BUFFER_SECONDS
+  );
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -65,6 +77,14 @@ export function ArcPaymentFlow({ action, fullName, years, disabled, onFinalize, 
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    const prefix = `gns:arc-payment:${action}:${fullName.toLowerCase()}:${years}:${(address || "").toLowerCase()}:`;
+    for (let index = window.localStorage.length - 1; index >= 0; index -= 1) {
+      const storedKey = window.localStorage.key(index);
+      if (storedKey && storedKey.startsWith(prefix) && storedKey !== key) {
+        window.localStorage.removeItem(storedKey);
+        setMessage({ ok: false, text: "A stored Arc receipt belongs to a stale payment intent and was cleared." });
+      }
+    }
     const raw = window.localStorage.getItem(key);
     if (!raw) {
       setReceipt(null);
@@ -76,10 +96,14 @@ export function ArcPaymentFlow({ action, fullName, years, disabled, onFinalize, 
       window.localStorage.removeItem(key);
       setReceipt(null);
     }
-  }, [key]);
+  }, [key, action, address, fullName, years]);
 
   const pay = async () => {
     if (!address || !intentHash) return;
+    if (!intentHasSafetyMargin) {
+      setMessage({ ok: false, text: "This payment intent is too close to expiry. Refresh the GenLayer intent first." });
+      return;
+    }
     if (!ARC_PAYMENT_ROUTER_ADDRESS) {
       setMessage({ ok: false, text: "Arc payment router is not configured." });
       return;
@@ -149,7 +173,7 @@ export function ArcPaymentFlow({ action, fullName, years, disabled, onFinalize, 
         <Button
           onClick={pay}
           loading={busy === "pay"}
-          disabled={disabled || !address || quote === null || busy !== null}
+          disabled={disabled || !address || quote === null || busy !== null || !intentHasSafetyMargin}
           size="lg"
         >
           {quote !== null ? `Pay ${formatUsdc(quote)} USDC on Arc` : "Pay on Arc"}
@@ -175,6 +199,10 @@ export function ArcPaymentFlow({ action, fullName, years, disabled, onFinalize, 
             </button>
           </div>
         </div>
+      )}
+
+      {intentHash && !intentHasSafetyMargin && !receipt && (
+        <p className="text-xs text-amber-700">Refresh this GenLayer reservation/renewal intent before paying; at least five minutes must remain.</p>
       )}
 
       {message && (

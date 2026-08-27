@@ -47,7 +47,7 @@ async function write(functionName, args = []) {
 function buildAttestation(claim) {
   const issuedAt = Math.floor(Date.now() / 1000);
   const ttl = Math.min(
-    Math.max(Number(process.env.GNS_AUTH_ATTESTATION_TTL || 3600), 60),
+    Math.max(Number(process.env.GNS_AUTH_ATTESTATION_TTL || 6 * 24 * 60 * 60), 60),
     7 * 24 * 60 * 60
   );
   return {

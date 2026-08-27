@@ -89,6 +89,16 @@ export type RegistrationReservation = {
   intent_hash: string;
 };
 
+export type RenewalIntent = {
+  namespace: string;
+  owner: string;
+  years: number;
+  current_expiry: number;
+  created_at: number;
+  expires_at: number;
+  intent_hash: string;
+};
+
 export async function isAvailable(name: string): Promise<boolean> {
   return Boolean(await readView<boolean>("is_available", [normaliseName(name)]));
 }
@@ -248,6 +258,16 @@ export async function cancelRegistrationReservation(
 
 export async function createRenewalIntent(name: string, years: number): Promise<ContractWriteResult> {
   return finalizedRegistryWrite("create_renewal_intent", [normaliseName(name), years]);
+}
+
+export async function getRenewalIntent(name: string): Promise<RenewalIntent | null> {
+  const parsed = parseJson<RenewalIntent | Record<string, never>>(
+    await readView<string>("get_renewal_intent", [normaliseName(name)]),
+    {} as Record<string, never>
+  );
+  return parsed && (parsed as RenewalIntent).intent_hash
+    ? (parsed as RenewalIntent)
+    : null;
 }
 
 export async function registerName(

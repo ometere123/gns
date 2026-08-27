@@ -80,6 +80,9 @@ class GNSRegistry(gl.Contract):
     def _sender(self) -> str:
         return str(gl.message.sender_address).lower()
 
+    def _contract_address(self) -> str:
+        return str(gl.message.contract_address).lower()
+
     def _now(self) -> int:
         raw = str(gl.message_raw["datetime"])
         return int(datetime.fromisoformat(raw.replace("Z", "+00:00")).timestamp())
@@ -101,7 +104,18 @@ class GNSRegistry(gl.Contract):
     def _make_intent_hash(self, kind: str, namespace: str, owner: str, years: int,
                           primary: str, created_at: int, expires_at: int,
                           current_expiry: int, nonce: int) -> str:
-        payload = self._dump({"protocol": "gns-arc-payment-intent-v1", "kind": kind,
+        return self._make_intent_hash_for_registry(
+            self._contract_address(), kind, namespace, owner, years, primary,
+            created_at, expires_at, current_expiry, nonce
+        )
+
+    def _make_intent_hash_for_registry(self, registry: str, kind: str,
+                                       namespace: str, owner: str, years: int,
+                                       primary: str, created_at: int,
+                                       expires_at: int, current_expiry: int,
+                                       nonce: int) -> str:
+        payload = self._dump({"protocol": "gns-arc-payment-intent-v2",
+            "registry": registry.lower(), "kind": kind,
             "namespace": namespace, "owner": owner.lower(), "years": int(years),
             "primary_address": primary.lower(), "created_at": int(created_at),
             "expires_at": int(expires_at), "current_expiry": int(current_expiry),
@@ -820,6 +834,10 @@ class GNSRegistry(gl.Contract):
             raise gl.vm.UserError("Create a renewal payment intent first")
         if int(intent.get("years", 0)) != int(years):
             raise gl.vm.UserError("Renewal duration does not match the intent")
+        if str(intent.get("owner", "")).lower() != str(obj.get("owner", "")).lower():
+            raise gl.vm.UserError("Renewal intent owner is stale")
+        if int(intent.get("current_expiry", 0)) != int(obj.get("expires_at", 0)):
+            raise gl.vm.UserError("Renewal intent namespace expiry is stale")
         payment = self._verify_arc_payment(
             full_name, int(years), ACTION_RENEW, arc_tx_hash, int(arc_log_index),
             str(intent.get("intent_hash", ""))
@@ -849,6 +867,7 @@ class GNSRegistry(gl.Contract):
         self._save_name_obj(full_name, obj)
         self._remove_owner_name(old_owner, full_name)
         self._add_owner_name(clean_new_owner, full_name)
+        self.renewal_intents[full_name] = ""
         if self.reverse_records.get(old_owner, "") == full_name:
             self.reverse_records[old_owner] = ""
         return self._success("Name transferred", obj)
@@ -937,11 +956,10 @@ class GNSRegistry(gl.Contract):
         was_new = existing is None
         if existing is not None:
             old_owner = str(existing.get("owner", "")).lower()
-            old_primary = str(existing.get("primary_address", "")).lower()
             if old_owner != "":
                 self._remove_owner_name(old_owner, full_subname)
-            if old_primary != "" and self.reverse_records.get(old_primary, "") == full_subname:
-                self.reverse_records[old_primary] = ""
+                if self.reverse_records.get(old_owner, "") == full_subname:
+                    self.reverse_records[old_owner] = ""
 
         self._save_name_obj(full_subname, obj)
         self._add_owner_name(owner, full_subname)
@@ -964,6 +982,7 @@ class GNSRegistry(gl.Contract):
         self._add_owner_name(clean_new_owner, full_name)
         if self.reverse_records.get(old_owner, "") == full_name:
             self.reverse_records[old_owner] = ""
+        self.renewal_intents[full_name] = ""
         return self._success("Subname transferred", obj)
 
     # ------------------------------------------------------------------
