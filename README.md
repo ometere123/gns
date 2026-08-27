@@ -127,16 +127,16 @@ Current validation and live testnet status:
 
 - GenVM lint: both GenLayer contracts passed;
 - Python compile: passed;
-- Direct Mode: **37/37 passed**;
+- Direct Mode: **41/41 passed**;
 - Foundry formatting: passed;
 - Solidity 0.8.24 build: passed;
-- `GNSPaymentRouter` runtime size: **5,713 bytes**;
-- Foundry: **17/17 passed**;
+- `GNSPaymentRouter` runtime size: **5,771 bytes**;
+- Foundry: **18/18 passed**;
 - `npm ci`: passed;
 - `npm audit --audit-level=high`: **0 vulnerabilities**;
 - Next.js 15.5.24 optimized production build: passed.
 
-GitHub Actions CI run [33024828677](https://github.com/ometere123/gns/actions/runs/33024828677) passed on deployment source SHA `b09652b2456178c18d65221ca7a20c195efcf82a`. Fresh live deployment and lifecycle evidence are recorded in [`docs/v3-live-deployment.md`](docs/v3-live-deployment.md). Later documentation/evidence commits are separate from the deployed contract source.
+GitHub Actions CI run [33091054373](https://github.com/ometere123/gns/actions/runs/33091054373) passed on hardened source SHA `da40114bda2e60028c287c71b712d5de71546c30`. Fresh deployment state and the remaining live funding gate are recorded in [`docs/v3-live-deployment.md`](docs/v3-live-deployment.md).
 
 ## Local configuration
 
@@ -169,9 +169,11 @@ See [`docs/arc-usdc.md`](docs/arc-usdc.md) and [`docs/deploy-genlayer.md`](docs/
 
 ## Deployment status
 
-**v3 has a live Arc Testnet / GenLayer Studionet deployment with observed cross-chain registration, renewal, authenticity verification, and challenge-resolution proof.**
+**v3 has fresh hardened Arc Testnet / GenLayer Studionet contracts deployed. The new cross-chain registration, renewal, authenticity, challenge and refresh proof is pending replenishment of the shared wallet’s Arc Testnet USDC; no incomplete flow is represented as successful.**
 
 Historical v2 registry/authenticity addresses are not v3 proof. v3 uses the fresh addresses recorded in the live deployment evidence; no historical v2 ownership migration was fabricated.
+
+Payment intents are domain-separated by protocol, actual registry address, action, namespace, wallet, terms, timestamps, current expiry and nonce. Renewal intents are invalidated by ownership/expiry transitions and cannot be reused after a transfer or stale expiry assumption. Browser payments require a five-minute intent safety margin and bind resumable receipts to the exact intent hash.
 
 For this testnet release, an unconsumed Arc payment has no permissionless refund or recovery path if later GenLayer registration fails permanently; production hardening must address that explicitly. Redirect behavior of `gl.nondet.web.request` was not independently established in the live flow, so no redirect-trampoline guarantee is claimed.
 

@@ -2,6 +2,23 @@
 
 This record contains observed Studionet and Arc Testnet results for the `v3-arc-usdc` branch. Contract deployment source was frozen before the live proof; later commits contain documentation, public evidence, and deployment-tooling changes only.
 
+## Current hardened generation
+
+Observed after the intent-domain, renewal-state, reverse-resolution, payment-safety and authenticity-refresh hardening pass:
+
+- Source SHA: `da40114bda2e60028c287c71b712d5de71546c30`.
+- Retained Arc router: `0x7D6EBe8032F46e36344255B46Af2729450E66181`, version `1.1.0-arc-usdc-intents`.
+- Fresh registry: `0xEd29ABf0670Ea230A54de10E167c9de9417f2907`; deployment tx `0x34cfebe31585eb74f2b4a122232260fe78af7c14cee23b56fda9450b9e1aa177`; version `2.2.0-arc-usdc-intents`; bound to the retained router.
+- Fresh authenticity: `0x4e841Ac051A50429c315b83D6898D4d51dEA5714`; deployment tx `0xbf2259a6222b2a54a11d8aeb835d1c61d5a1acfdd4a0f5271a92941186be006b`; version `2.1.0-authenticity-refresh`; bound to the fresh registry; policy `gns-auth-v2`.
+- Shared public deployer/admin: `0x231EF01E282385eC2E22394469f1C8c6C28Fd6b1`.
+- Source SHA-256: router `FB0AAB2764EB3336349F4F8B95A37366C172167F6DC1A63133801974448E3262`; registry `A64B4C3E492F753CFE828F326D763E487BF81EAC454F45C51D53819BB4C56CEB`; authenticity `4AD027971A173A03BCD915CFEB6E1438857DA1631F8C8037477A564A6FE5276F`.
+- Exact-SHA CI: [33091054373](https://github.com/ometere123/gns/actions/runs/33091054373), successful.
+- Vercel branch Preview: https://gns-ft77ucrh6-delealufejoel-4184s-projects.vercel.app (READY).
+
+The new live payment lifecycle is blocked before payment because the shared wallet has 2.47 Arc Testnet USDC, below the 5 USDC registration fee and the additional renewal fee. No new namespace, payment, claim, verdict, challenge, or refresh identifier is claimed here. Manual action required: request Arc Testnet USDC for `0x231EF01E282385eC2E22394469f1C8c6C28Fd6b1` from the official Circle Faucet, selecting Arc Testnet, then rerun the same-wallet proof.
+
+The payment-time pricing policy remains: an unused valid receipt honors the price paid at payment time, but still requires a current matching reservation/intent and one-time consumption. An unconsumed payment has no permissionless refund/recovery path in this testnet release; production hardening must address that. Redirect behavior of `gl.nondet.web.request` remains unproven at runtime, so no redirect-trampoline guarantee is claimed.
+
 ## Source and networks
 
 - Deployment source revision: `b09652b2456178c18d65221ca7a20c195efcf82a`
