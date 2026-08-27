@@ -7,6 +7,6 @@
   "claim_id": "1",
   "challenge": "4412a665398e4dcdca3e1603b3ebc85a7406f262",
   "policy_version": "gns-auth-v2",
-  "issued_at": 1787848626,
-  "expires_at": 1788367026
+  "issued_at": 1787848983,
+  "expires_at": 1788367383
 }
