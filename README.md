@@ -123,7 +123,7 @@ Operational controls at `/ops-gns` are split by on-chain role; frontend access c
 
 ## Validation
 
-Current local pre-deployment validation:
+Current validation and live testnet status:
 
 - GenVM lint: both GenLayer contracts passed;
 - Python compile: passed;
@@ -136,7 +136,7 @@ Current local pre-deployment validation:
 - `npm audit --audit-level=high`: **0 vulnerabilities**;
 - Next.js 15.5.24 optimized production build: passed.
 
-GitHub Actions CI run [33020456278](https://github.com/ometere123/gns/actions/runs/33020456278) passed on pre-deployment source SHA `34477209009724612ec05d54134f6065a2d006d7`. This confirms source validation only; no fresh live deployment is claimed until the shared deployment wallet is configured.
+GitHub Actions CI run [33024828677](https://github.com/ometere123/gns/actions/runs/33024828677) passed on deployment source SHA `b09652b2456178c18d65221ca7a20c195efcf82a`. Fresh live deployment and lifecycle evidence are recorded in [`docs/v3-live-deployment.md`](docs/v3-live-deployment.md). Later documentation/evidence commits are separate from the deployed contract source.
 
 ## Local configuration
 
@@ -169,11 +169,11 @@ See [`docs/arc-usdc.md`](docs/arc-usdc.md) and [`docs/deploy-genlayer.md`](docs/
 
 ## Deployment status
 
-**v3 is source-complete and CI-validated but not yet represented by a fresh live deployment.**
+**v3 has a live Arc Testnet / GenLayer Studionet deployment with observed cross-chain registration, renewal, authenticity verification, and challenge-resolution proof.**
 
-Historical v2 registry/authenticity addresses are not v3 proof. A fresh deployment is mandatory because the new registry constructor binds the Arc router and the registration lifecycle now includes a GenLayer reservation plus Arc receipt verification.
+Historical v2 registry/authenticity addresses are not v3 proof. v3 uses the fresh addresses recorded in the live deployment evidence; no historical v2 ownership migration was fabricated.
 
-For this testnet release, an unconsumed Arc payment has no permissionless refund or recovery path if later GenLayer registration fails permanently; production hardening must address that explicitly. Redirect behavior of `gl.nondet.web.request` remains an independent pre-production runtime-audit item.
+For this testnet release, an unconsumed Arc payment has no permissionless refund or recovery path if later GenLayer registration fails permanently; production hardening must address that explicitly. Redirect behavior of `gl.nondet.web.request` was not independently established in the live flow, so no redirect-trampoline guarantee is claimed.
 
 ## Branch policy
 
