@@ -99,3 +99,21 @@ The collected total includes an earlier unconsumed test registration payment mad
 - The redirect behavior of `gl.nondet.web.request` was not independently established by this live flow; no redirect-trampoline guarantee is claimed.
 - The v2 registry is historical. v3 is a fresh testnet generation; no ownership migration was fabricated.
 - Unconsumed Arc payments have no permissionless refund/recovery path in this testnet release. Production hardening should add escrow, expiry/refund recovery, or payment-intent settlement.
+
+## Current generation-2 deployment (intent-bound receipts)
+
+- Deployment source commit: `30d8a55` (contract source was frozen before deployment; later commits contain evidence/docs only).
+- Arc router: `0x7D6EBe8032F46e36344255B46Af2729450E66181`; deployment tx `0x493d89804f4947688b2777d4ccecee69627b7365a9c6d960ad3c8bae2da46465`; version `1.1.0-arc-usdc-intents`; admin/treasury `0x231EF01E282385eC2E22394469f1C8c6C28Fd6b1`; prices `5000000`/`3000000` USDC base units/year.
+- GenLayer registry: `0xC4a7eBa85099E5018B1AdE939a47b42558c4729d`; deployment tx `0x364b4ab8ea8231ae417bacc6df44b5bad79dcac47255712e17d1243a396505f9`; version `2.2.0-arc-usdc-intents`; bound router above.
+- GNSAuthenticity: `0x777C16142C951cf44589D24201573d12A431532c`; deployment tx `0x6f46f802aa6e3ce2b1c37b762e73e72d826fa4fdccde06b02a8190dd2d16466e`; version `2.1.0-authenticity-refresh`; registry dependency above; policy `gns-auth-v2`.
+- Namespace: `gnsv31787841878.gen`; owner/shared Arc payer `0x231EF01E282385eC2E22394469f1C8c6C28Fd6b1`.
+- Reservation tx `0x1dde587638344d89d481430b4c46bc58c14bf067856b2c5db5eb18b8172ba260`; reservation expiry `1787843693`; registration intent hash `0x4ebd13816f7711b19bc3eb6d949fdfbf019e17b477b6af66e81c7228504c9af6`.
+- Arc registration payment tx `0x2e1d59bb9fd6c8d90b96d02b53e6614506e9f00d236e936fdbf1f193ab27f590`, PaymentRecorded log index `31`, amount `5000000`; GenLayer registration tx `0x2bc84db7bc2903cf5fedeac9c601cbbc9753966b4f8bd2d20eff606674ab13d9`; consumed proof `true`.
+- Renewal intent hash `0x25540f5d534ee23eb4681b6766b48ab1d39225a2cafa099ec9c53a51ae609f49`; Arc renewal tx `0x8ec7ddc01e3e28e3feb6fe5e2528b156af784374769c5dd3c8d2aab78419fbf8`, log index `23`, amount `3000000`; GenLayer renewal tx `0x16c92c0732e544e62312adef99e79d640f5108d491c1db1ca989f122e06ab6b8`; expiry `1819377983` → `1850913983`.
+- Truthful GitHub record: `https://github.com/ometere123/gns`; record tx `0x11e9a97c2a4bb0950fbd6521bf7a72bb447c9a4b83eb3bcb39901ea87f29621e`.
+- Claim `1`, create tx `0x032a5454e7fccf7b4927376e866757fa2d724d716db58d565ef674aca151da07`; attestation URL `https://raw.githubusercontent.com/ometere123/gns/v3-arc-usdc/evidence/v3-gen2-gns-claim.json`; anonymous retrieval HTTP 200; corroborating URL `https://github.com/ometere123/gns`.
+- Verification tx `0xc2941b5cfad596009098ebf16e8464385a019ff7478cbdcc88646f24fe2f0bd9`; verdict `1`, decision `VERIFIED`, reason `VALID_ATTESTATION`, evidence expiry `1788360693`.
+- Challenger `0x268a14adb45e9cccdf950fb1e4c2ac4f226b6ef5`; challenge `1`, tx `0x409f7505f1063d210e168a14d7270b361a4c9c2a922f5917ad3e3118df5fedd6`; benign evidence `https://github.com/ometere123/gns`; VERIFIED remained authoritative while OPEN.
+- Resolution tx `0xc77795a391494a92ceb420b75eac1a1684b774aa1d4be7378db584ccc0c390f8`; verdict `2`, decision `UPHOLD`; final authoritative state `VERIFIED`, active challenge cleared.
+- Current source hashes: router `pending final re-computation`; registry `pending final re-computation`; authenticity `pending final re-computation`.
+- CI for the frozen source: [33083018380](https://github.com/ometere123/gns/actions/runs/33083018380), green. The post-proof documentation/evidence tip is tracked separately from deployed source.
