@@ -115,5 +115,5 @@ The collected total includes an earlier unconsumed test registration payment mad
 - Verification tx `0xc2941b5cfad596009098ebf16e8464385a019ff7478cbdcc88646f24fe2f0bd9`; verdict `1`, decision `VERIFIED`, reason `VALID_ATTESTATION`, evidence expiry `1788360693`.
 - Challenger `0x268a14adb45e9cccdf950fb1e4c2ac4f226b6ef5`; challenge `1`, tx `0x409f7505f1063d210e168a14d7270b361a4c9c2a922f5917ad3e3118df5fedd6`; benign evidence `https://github.com/ometere123/gns`; VERIFIED remained authoritative while OPEN.
 - Resolution tx `0xc77795a391494a92ceb420b75eac1a1684b774aa1d4be7378db584ccc0c390f8`; verdict `2`, decision `UPHOLD`; final authoritative state `VERIFIED`, active challenge cleared.
-- Current source hashes: router `pending final re-computation`; registry `pending final re-computation`; authenticity `pending final re-computation`.
+- Current source hashes: router `FB0AAB2764EB3336349F4F8B95A37366C172167F6DC1A63133801974448E3262`; registry `B7B7A53BF6BC6F37A053F882809F5FCB18AE641F0BB706738E7D608900A50ECA`; authenticity `4AD027971A173A03BCD915CFEB6E1438857DA1631F8C8037477A564A6FE5276F`.
 - CI for the frozen source: [33083018380](https://github.com/ometere123/gns/actions/runs/33083018380), green. The post-proof documentation/evidence tip is tracked separately from deployed source.
