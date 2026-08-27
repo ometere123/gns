@@ -136,7 +136,7 @@ Current validation and live testnet status:
 - `npm audit --audit-level=high`: **0 vulnerabilities**;
 - Next.js 15.5.24 optimized production build: passed.
 
-GitHub Actions CI run [33091054373](https://github.com/ometere123/gns/actions/runs/33091054373) passed on hardened source SHA `da40114bda2e60028c287c71b712d5de71546c30`. Fresh deployment state and the remaining live funding gate are recorded in [`docs/v3-live-deployment.md`](docs/v3-live-deployment.md).
+GitHub Actions CI run [33091054373](https://github.com/ometere123/gns/actions/runs/33091054373) passed on hardened source SHA `da40114bda2e60028c287c71b712d5de71546c30`; final CI is recorded in [`docs/v3-live-deployment.md`](docs/v3-live-deployment.md).
 
 ## Local configuration
 
@@ -169,7 +169,7 @@ See [`docs/arc-usdc.md`](docs/arc-usdc.md) and [`docs/deploy-genlayer.md`](docs/
 
 ## Deployment status
 
-**v3 has fresh hardened Arc Testnet / GenLayer Studionet contracts deployed. The new cross-chain registration, renewal, authenticity, challenge and refresh proof is pending replenishment of the shared wallet’s Arc Testnet USDC; no incomplete flow is represented as successful.**
+**v3 has fresh hardened Arc Testnet / GenLayer Studionet contracts and completed live cross-chain registration, renewal, authenticity, challenge, and refresh proof.**
 
 Historical v2 registry/authenticity addresses are not v3 proof. v3 uses the fresh addresses recorded in the live deployment evidence; no historical v2 ownership migration was fabricated.
 

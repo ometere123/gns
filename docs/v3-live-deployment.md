@@ -19,6 +19,26 @@ The new live payment lifecycle is blocked before payment because the shared wall
 
 The payment-time pricing policy remains: an unused valid receipt honors the price paid at payment time, but still requires a current matching reservation/intent and one-time consumption. An unconsumed payment has no permissionless refund/recovery path in this testnet release; production hardening must address that. Redirect behavior of `gl.nondet.web.request` remains unproven at runtime, so no redirect-trampoline guarantee is claimed.
 
+## Current hardened live proof
+
+- Namespace: `gnsv3mtbqkki1.gen`; owner/shared Arc payer: `0x231EF01E282385eC2E22394469f1C8c6C28Fd6b1`.
+- Reservation tx: `0x2e65435076ded7882cff6750ae88953cf6f0369f45c5746fb85821fc0c36a85b`; reservation expiry `1787849868`; registration intent `0xfe63cce2329dbb7c7efc572392bec0366ff2caacfb49cc8638196410d13fa110`.
+- Arc approval tx: `0x82852da8238f7faed0b0cdd1ca267327f8b35148d49f27648ee9a3aaabae442e`; registration payment tx `0xd2767fe016ce0a0847c9a15b968b7bb113a968626d46212098e9e6920b308f9e`; log index `37`; amount `5000000` USDC base units.
+- GenLayer registration tx: `0x293c0eb5af599823ad42bef211853561a079ae6752b13a15c3fe36f222ecdb81`; finalized namespace owner is the shared wallet; receipt consumed `true`.
+- Registration replay tx: `0x770c2bc97986085977151342008dc4dec205cfc1cc4e44e18034bba5d2b5c3bf`; finalized with execution `ERROR` as expected for a consumed receipt.
+- Renewal intent tx `0x92de8f6b56d602378d75610f95953f214120d297ad908482766622a8ce27168f`; intent `0xc0600c0618afc442050e99273ccb985338fd1683ac13c6e3ccc91aeed54ea9d7`.
+- Renewal approval tx `0x9b27f478f7c64fd195cf6f70c62c4df90ebee054ff8871d067dd6e83986b88f1`; Arc renewal tx `0x95a061f19b309cfcf4de30be9f83437db0fa68c71114d37c5c6e1ae37a19627c`; log index `24`; amount `3000000`.
+- GenLayer renewal tx `0x1aa4fc6c0e16c9a174924675693e7319292e79163e7340382d2f22fcff1207f6`; expiry `1819384155` → `1850920155`; receipt consumed `true`.
+- Renewal replay tx `0x60d562e64da0a583c360e9caa5a1391b72abe1780aadd9aa2922f0ed59aa3f71`; finalized with execution `ERROR` as expected.
+- Records tx `0x5a9bfb74d94a20049df402330cc9b772d38c7f97200557c449913f2eafafa467`; GitHub record `https://github.com/ometere123/gns`; website and agent records are empty.
+- Claim `1`, creation tx `0x2d0b154ec78dd7b05d58047e870efeef7b77288d633dccaa978c11c542038a30`; subject hash `303074d445dcfa6904f970a519430e24610cd8190a103c13a18bcfb4b749cdf3`.
+- Attestation URL: `https://raw.githubusercontent.com/ometere123/gns/v3-arc-usdc/evidence/v3-final-hardened-claim.json`; anonymous retrieval HTTP 200 and exact JSON; lifetime six days; corroborating URL `https://github.com/ometere123/gns`.
+- Verification tx `0xb0a9914f2bc2d3858c240d3f874355fe56c7a5183edf22631a88eab9017caaae`; verdict `1`, decision `VERIFIED`; evidence expiry `1788367026`.
+- Challenger `0x268a14adb45e9cccdf950fb1e4c2ac4f226b6ef5`; challenge `1`; tx `0x999ed6edca8cee63a82a06405e9db6c5a3ae47d54d0094007800af1301a08d0d`; evidence `https://github.com/ometere123/gns`; VERIFIED remained authoritative while OPEN.
+- Resolution tx `0xeac52bc9b2a503a4c65058394bc84cc69bde6acc87bd40e6a6e2bbbd2b1b2704`; verdict `2`, decision `UPHOLD`; final status `VERIFIED`, active challenge cleared.
+- Refresh tx `0x55a4f36d5013cac628ca9a142863d0658643153bf527346f40be01dbc4edfd95`; verdict `3`; final status `VERIFIED`; evidence expiry moved from `1788367026` to `1788367383`.
+- Retained router accounting after these flows: total collected `16000000`, total withdrawn `0`, treasury balance `16000000` USDC base units.
+
 ## Source and networks
 
 - Deployment source revision: `b09652b2456178c18d65221ca7a20c195efcf82a`
