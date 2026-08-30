@@ -13,6 +13,7 @@ Observed after the intent-domain, renewal-state, reverse-resolution, payment-saf
 - Shared public deployer/admin: `0x231EF01E282385eC2E22394469f1C8c6C28Fd6b1`.
 - Source SHA-256: router `FB0AAB2764EB3336349F4F8B95A37366C172167F6DC1A63133801974448E3262`; registry `A64B4C3E492F753CFE828F326D763E487BF81EAC454F45C51D53819BB4C56CEB`; authenticity `4AD027971A173A03BCD915CFEB6E1438857DA1631F8C8037477A564A6FE5276F`.
 - Exact-SHA CI: [33091054373](https://github.com/ometere123/gns/actions/runs/33091054373), successful.
+- Final release-hygiene branch tip: `e75b45d13c9cf6787d4cb97548eeb7a2511e5ee5`; exact-SHA CI [33324124186](https://github.com/ometere123/gns/actions/runs/33324124186), successful.
 - Vercel branch Preview: https://gns-q1bfxnp1y-delealufejoel-4184s-projects.vercel.app (READY).
 
 The new live payment lifecycle was completed after the shared wallet was funded; the observed registration, renewal, claim, challenge, and refresh proof is recorded below.
