@@ -13,9 +13,11 @@ Observed after the intent-domain, renewal-state, reverse-resolution, payment-saf
 - Shared public deployer/admin: `0x231EF01E282385eC2E22394469f1C8c6C28Fd6b1`.
 - Source SHA-256: router `FB0AAB2764EB3336349F4F8B95A37366C172167F6DC1A63133801974448E3262`; registry `A64B4C3E492F753CFE828F326D763E487BF81EAC454F45C51D53819BB4C56CEB`; authenticity `4AD027971A173A03BCD915CFEB6E1438857DA1631F8C8037477A564A6FE5276F`.
 - Exact-SHA CI: [33091054373](https://github.com/ometere123/gns/actions/runs/33091054373), successful.
-- Vercel branch Preview: https://gns-ft77ucrh6-delealufejoel-4184s-projects.vercel.app (READY).
+- Vercel branch Preview: https://gns-q1bfxnp1y-delealufejoel-4184s-projects.vercel.app (READY).
 
-The new live payment lifecycle is blocked before payment because the shared wallet has 2.47 Arc Testnet USDC, below the 5 USDC registration fee and the additional renewal fee. No new namespace, payment, claim, verdict, challenge, or refresh identifier is claimed here. Manual action required: request Arc Testnet USDC for `0x231EF01E282385eC2E22394469f1C8c6C28Fd6b1` from the official Circle Faucet, selecting Arc Testnet, then rerun the same-wallet proof.
+The new live payment lifecycle was completed after the shared wallet was funded; the observed registration, renewal, claim, challenge, and refresh proof is recorded below.
+
+The earlier failed Preview transaction `0x63304486f4cfe546bb75711bb48febb977f4705b5e7ccda775e5b7e7393f0b80` targeted `0x24185bd123b55e994C4819CAC75B29aD7f495A60`, not the fresh registry, and finalized with an undefined-method error. This confirms stale Preview contract configuration rather than a fresh-registry contract failure. Preview public variables were subsequently replaced with the fresh registry/authenticity/router and network values, and the redeployed Preview completed successfully at https://gns-q1bfxnp1y-delealufejoel-4184s-projects.vercel.app.
 
 The payment-time pricing policy remains: an unused valid receipt honors the price paid at payment time, but still requires a current matching reservation/intent and one-time consumption. An unconsumed payment has no permissionless refund/recovery path in this testnet release; production hardening must address that. Redirect behavior of `gl.nondet.web.request` remains unproven at runtime, so no redirect-trampoline guarantee is claimed.
 

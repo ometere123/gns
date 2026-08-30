@@ -3,6 +3,7 @@ name: GNS v3 Arc USDC CI
 on:
   push:
     branches:
+      - main
       - v3-arc-usdc
   pull_request:
     paths:

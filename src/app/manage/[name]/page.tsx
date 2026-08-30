@@ -40,6 +40,7 @@ export default function ManagePage({ params }: { params: Promise<{ name: string 
   useEffect(load, [fullName]);
 
   const isExpired = data?.status === "expired";
+  const isSubname = Boolean(data?.is_subname);
   const isOwner = Boolean(address && data && data.owner.toLowerCase() === address.toLowerCase());
   const isActiveOwner = Boolean(isOwner && !isExpired);
 
@@ -131,6 +132,13 @@ export default function ManagePage({ params }: { params: Promise<{ name: string 
           <Link href={`/register/${encodeURIComponent(data.full_name)}`}>
             <Button>Register {data.full_name}</Button>
           </Link>
+        </Card>
+      ) : isSubname ? (
+        <Card padding="lg" className="space-y-4">
+          <h3 className="font-semibold text-ink">Subname expiry</h3>
+          <p className="text-sm text-muted">
+            Subname expiry follows the parent namespace and cannot be renewed separately.
+          </p>
         </Card>
       ) : (
       <Card padding="lg" className="space-y-4">
