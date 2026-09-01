@@ -9,6 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { ARC_CHAIN_HEX, ARC_EXPLORER_URL, ARC_RPC_URL } from "@/lib/arc/client";
 
 type WalletState = {
   address: string | null;
@@ -18,6 +19,7 @@ type WalletState = {
   connect: () => Promise<void>;
   disconnect: () => void;
   switchToGenLayer: () => Promise<void>;
+  switchToArc: () => Promise<void>;
 };
 
 export const EXPECTED_CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID || "61999");
@@ -32,8 +34,7 @@ type EthLike = {
 
 function getEthereum(): EthLike | null {
   if (typeof window === "undefined") return null;
-  const eth = (window as unknown as { ethereum?: EthLike }).ethereum;
-  return eth || null;
+  return (window as unknown as { ethereum?: EthLike }).ethereum || null;
 }
 
 function parseChainId(v: unknown): number | null {
@@ -42,7 +43,7 @@ function parseChainId(v: unknown): number | null {
     const trimmed = v.trim();
     if (!trimmed) return null;
     try {
-      return Number(trimmed.startsWith("0x") ? BigInt(trimmed) : BigInt(trimmed));
+      return Number(BigInt(trimmed));
     } catch {
       return null;
     }
@@ -60,18 +61,19 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     const eth = getEthereum();
     setHasInjected(Boolean(eth));
     if (!eth) return;
-    const saved = typeof window !== "undefined" ? window.localStorage.getItem("gns:address") : null;
+
+    const saved = window.localStorage.getItem("gns:address");
     if (saved) setAddress(saved);
 
-    eth.request({ method: "eth_chainId" }).then((cid) => {
-      setChainId(parseChainId(cid));
-    }).catch(() => {});
+    eth.request({ method: "eth_chainId" })
+      .then((cid) => setChainId(parseChainId(cid)))
+      .catch(() => {});
 
     const accountsHandler = (accounts: unknown) => {
       const list = Array.isArray(accounts) ? (accounts as string[]) : [];
-      const a = list[0] || null;
-      setAddress(a);
-      if (a) window.localStorage.setItem("gns:address", a);
+      const next = list[0] || null;
+      setAddress(next);
+      if (next) window.localStorage.setItem("gns:address", next);
       else window.localStorage.removeItem("gns:address");
     };
     const chainHandler = (cid: unknown) => setChainId(parseChainId(cid));
@@ -93,11 +95,11 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setConnecting(true);
     try {
       const accounts = (await eth.request({ method: "eth_requestAccounts" })) as string[];
-      const a = accounts?.[0] || null;
-      setAddress(a);
-      if (a) window.localStorage.setItem("gns:address", a);
-    } catch (e) {
-      console.error(e);
+      const next = accounts?.[0] || null;
+      setAddress(next);
+      if (next) window.localStorage.setItem("gns:address", next);
+      const cid = await eth.request({ method: "eth_chainId" });
+      setChainId(parseChainId(cid));
     } finally {
       setConnecting(false);
     }
@@ -105,44 +107,66 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
   const disconnect = useCallback(() => {
     setAddress(null);
-    if (typeof window !== "undefined") window.localStorage.removeItem("gns:address");
+    window.localStorage.removeItem("gns:address");
   }, []);
 
   const switchToGenLayer = useCallback(async () => {
     const eth = getEthereum();
-    if (!eth) return;
-    const hex = "0x" + EXPECTED_CHAIN_ID.toString(16);
+    if (!eth) throw new Error("No injected wallet detected.");
+    const hex = `0x${EXPECTED_CHAIN_ID.toString(16)}`;
     try {
       await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: hex }] });
     } catch (err) {
-      const code = (err as { code?: number })?.code;
-      if (code === 4902) {
-        // Chain not added — try to add it.
-        try {
-          await eth.request({
-            method: "wallet_addEthereumChain",
-            params: [
-              {
-                chainId: hex,
-                chainName: "GenLayer Studionet",
-                nativeCurrency: { name: "GEN", symbol: "GEN", decimals: 18 },
-                rpcUrls: [process.env.NEXT_PUBLIC_GENLAYER_RPC_URL || "https://studio.genlayer.com/api"],
-                blockExplorerUrls: [process.env.NEXT_PUBLIC_EXPLORER_URL || "https://explorer-studio.genlayer.com/"],
-              },
-            ],
-          });
-        } catch (e) {
-          console.warn("Failed to add Studionet to wallet", e);
-        }
-      } else {
-        console.warn("Failed to switch network", err);
-      }
+      if ((err as { code?: number })?.code !== 4902) throw err;
+      await eth.request({
+        method: "wallet_addEthereumChain",
+        params: [
+          {
+            chainId: hex,
+            chainName: "GenLayer Studionet",
+            nativeCurrency: { name: "GEN", symbol: "GEN", decimals: 18 },
+            rpcUrls: [process.env.NEXT_PUBLIC_GENLAYER_RPC_URL || "https://studio.genlayer.com/api"],
+            blockExplorerUrls: [process.env.NEXT_PUBLIC_EXPLORER_URL || "https://explorer-studio.genlayer.com/"],
+          },
+        ],
+      });
+    }
+  }, []);
+
+  const switchToArc = useCallback(async () => {
+    const eth = getEthereum();
+    if (!eth) throw new Error("No injected wallet detected.");
+    try {
+      await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: ARC_CHAIN_HEX }] });
+    } catch (err) {
+      if ((err as { code?: number })?.code !== 4902) throw err;
+      await eth.request({
+        method: "wallet_addEthereumChain",
+        params: [
+          {
+            chainId: ARC_CHAIN_HEX,
+            chainName: "Arc Testnet",
+            nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
+            rpcUrls: [ARC_RPC_URL],
+            blockExplorerUrls: [ARC_EXPLORER_URL],
+          },
+        ],
+      });
     }
   }, []);
 
   const value = useMemo<WalletState>(
-    () => ({ address, chainId, connecting, hasInjected, connect, disconnect, switchToGenLayer }),
-    [address, chainId, connecting, hasInjected, connect, disconnect, switchToGenLayer]
+    () => ({
+      address,
+      chainId,
+      connecting,
+      hasInjected,
+      connect,
+      disconnect,
+      switchToGenLayer,
+      switchToArc,
+    }),
+    [address, chainId, connecting, hasInjected, connect, disconnect, switchToGenLayer, switchToArc]
   );
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;

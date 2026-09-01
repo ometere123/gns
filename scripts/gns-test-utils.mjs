@@ -28,7 +28,7 @@ export function loadTestEnv() {
 
 export function requireEnv(name) {
   const value = process.env[name];
-  if (!value) throw new Error(`Missing ${name}. Check ${TEST_ENV}`);
+  if (!value) throw new Error(`Missing ${name}. Check ${TEST_ENV} or ${LOCAL_ENV}`);
   return value;
 }
 
@@ -40,18 +40,61 @@ export function makeClient(account) {
   return createClient({ chain: studionet, account });
 }
 
-export async function waitAccepted(client, tx, label) {
+function executionResultName(receipt) {
+  if (!receipt || typeof receipt !== "object") return "";
+  const direct = String(
+    receipt.txExecutionResultName ??
+      receipt.tx_execution_result_name ??
+      receipt.executionResultName ??
+      receipt.execution_result_name ??
+      ""
+  ).toUpperCase();
+  if (direct) return direct;
+
+  // The current Studionet SDK exposes execution status inside the finalized
+  // consensus receipt rather than copying it to the top-level object.
+  const leader = receipt.consensus_data?.leader_receipt?.[0];
+  return String(leader?.execution_result ?? "").toUpperCase();
+}
+
+export function assertSuccessfulExecution(receipt, label = "transaction") {
+  const result = executionResultName(receipt);
+  if (!result) {
+    throw new Error(
+      `${label} reached its requested status but the receipt did not expose an execution result. Refusing to report success without FINISHED_WITH_RETURN.`
+    );
+  }
+  if (result !== "FINISHED_WITH_RETURN" && result !== "SUCCESS") {
+    throw new Error(`${label} execution failed: ${result}`);
+  }
+  return receipt;
+}
+
+async function waitForStatus(client, tx, label, status, retries) {
   const hash = typeof tx === "string" ? tx : tx?.hash;
-  if (!hash) return tx;
+  if (!hash) throw new Error(`${label} did not return a transaction hash`);
   console.log(`${label}: ${hash}`);
-  if (typeof client.waitForTransactionReceipt !== "function") return tx;
+  if (typeof client.waitForTransactionReceipt !== "function") {
+    throw new Error("GenLayer client does not expose waitForTransactionReceipt");
+  }
   const receipt = await client.waitForTransactionReceipt({
     hash,
-    status: "ACCEPTED",
-    retries: 80,
+    status,
+    retries,
     interval: 3000,
   });
+  if (status === "FINALIZED") {
+    assertSuccessfulExecution(receipt, label);
+  }
   return receipt;
+}
+
+export async function waitAccepted(client, tx, label) {
+  return waitForStatus(client, tx, label, "ACCEPTED", 80);
+}
+
+export async function waitFinalized(client, tx, label) {
+  return waitForStatus(client, tx, label, "FINALIZED", 160);
 }
 
 export function findAddressDeep(value) {
@@ -76,21 +119,24 @@ export function findAddressDeep(value) {
   return "";
 }
 
-export function updateLocalContractAddress(address) {
+function updateLocalEnvValue(key, value) {
   let raw = fs.existsSync(LOCAL_ENV) ? fs.readFileSync(LOCAL_ENV, "utf8") : "";
-  const line = `NEXT_PUBLIC_GNS_CONTRACT_ADDRESS=${address}`;
-  if (/^NEXT_PUBLIC_GNS_CONTRACT_ADDRESS=.*$/m.test(raw)) {
-    raw = raw.replace(/^NEXT_PUBLIC_GNS_CONTRACT_ADDRESS=.*$/m, line);
+  const line = `${key}=${value}`;
+  const re = new RegExp(`^${key}=.*$`, "m");
+  if (re.test(raw)) {
+    raw = raw.replace(re, line);
   } else {
     raw += `${raw.endsWith("\n") || raw.length === 0 ? "" : "\n"}${line}\n`;
   }
   fs.writeFileSync(LOCAL_ENV, raw);
 }
 
-export function genToWei(gen) {
-  const [whole, frac = ""] = String(gen).split(".");
-  const fracPadded = (frac + "0".repeat(18)).slice(0, 18);
-  return BigInt(whole || "0") * 10n ** 18n + BigInt(fracPadded || "0");
+export function updateLocalContractAddress(address) {
+  updateLocalEnvValue("NEXT_PUBLIC_GNS_CONTRACT_ADDRESS", address);
+}
+
+export function updateLocalAuthenticityAddress(address) {
+  updateLocalEnvValue("NEXT_PUBLIC_GNS_AUTHENTICITY_CONTRACT_ADDRESS", address);
 }
 
 export function uniqueLabel(prefix) {

@@ -1,6 +1,6 @@
-# Deploying GNSRegistry to GenLayer
+# Deploying GNS v3 to GenLayer
 
-The MVP already points at the deployed Studionet contract `0x141c3e53ae4Ad24B07405CC0fb4D12ccc3A3007A`. Follow this guide if you want to redeploy your own copy.
+Deploy the Arc USDC payment router first. `GNSRegistry` permanently binds that router address in its constructor.
 
 ## Studionet target
 
@@ -8,30 +8,41 @@ The MVP already points at the deployed Studionet contract `0x141c3e53ae4Ad24B074
 - RPC: `https://studio.genlayer.com/api`
 - Explorer: `https://explorer-studio.genlayer.com/`
 
-## Steps
+## Registry
 
-1. Open <https://studio.genlayer.com/>.
-2. Connect a wallet that holds Studionet test GEN.
-3. Click **New Contract** and paste the full contents of `contracts/GNSRegistry.py`.
-4. Compile and deploy.
-5. Copy the deployed contract address.
-6. In this project edit `.env.local`:
+Set the fresh Arc router address locally, then run:
 
-   ```
-   NEXT_PUBLIC_GNS_CONTRACT_ADDRESS=0xYourNewContract
-   NEXT_PUBLIC_GENLAYER_RPC_URL=https://studio.genlayer.com/api
-   NEXT_PUBLIC_CHAIN_NAME=studionet
-   NEXT_PUBLIC_CHAIN_ID=61999
-   NEXT_PUBLIC_EXPLORER_URL=https://explorer-studio.genlayer.com/
-   ```
+```bash
+npm run deploy:gns
+```
 
-7. Restart `npm run dev`.
+The deployment script passes the Arc router constructor argument, waits for `FINALIZED`, requires successful execution and records the resulting registry address locally.
 
-## Smoke test
+Verify:
 
-In the GenLayer Studio console, call `contract_version` — it should return `"1.0.1"`. Then `register("test", 1, "0xYourAddress")` and verify with `resolve("test")`.
+- `contract_version()` returns `2.2.0-arc-usdc-intents`;
+- `get_arc_payment_config()` returns Arc chain ID `5042002` and the exact router;
+- reservation TTL is non-zero;
+- `get_admin()` is the intended registry admin.
 
-## Notes
+## Authenticity
 
-- Do not commit `.env.local`.
-- Never paste a private key into this repo or the Studio UI text fields.
+After the new registry address is configured:
+
+```bash
+npm run deploy:authenticity
+```
+
+Verify that the authenticity contract points to the new registry and reports policy `gns-auth-v2`.
+
+## Live smoke sequence
+
+1. reserve an available `.gen` registration on GenLayer;
+2. pay USDC on Arc;
+3. finalize registration on GenLayer using the Arc tx hash and event log index;
+4. confirm the payment receipt is consumed;
+5. confirm the namespace resolves to the expected owner;
+6. run `npm run smoke:gns` with the observed namespace/receipt values;
+7. complete the separate authenticity claim and challenge lifecycle.
+
+Do not reuse historical v2 deployment addresses as v3 proof.

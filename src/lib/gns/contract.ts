@@ -1,6 +1,12 @@
 "use client";
 
-import { readView, writeMethod, isConfigured } from "@/lib/genlayer/client";
+import {
+  GNS_CONTRACT_ADDRESS,
+  isConfigured,
+  readView,
+  writeMethod,
+  writeMethodAt,
+} from "@/lib/genlayer/client";
 import { normaliseName } from "@/lib/utils";
 import type {
   GnsName,
@@ -9,7 +15,6 @@ import type {
   ContractWriteResult,
   SearchResult,
   AiReview,
-  AiResult,
   AiSuggestion,
 } from "@/lib/types";
 
@@ -28,68 +33,136 @@ function parseJson<T>(raw: unknown, fallback: T): T {
 }
 
 function asWriteResult(raw: unknown): ContractWriteResult {
-  const parsed = parseJson<Partial<ContractWriteResult>>(raw, { success: true, message: "OK" });
+  const parsed = parseJson<Partial<ContractWriteResult>>(raw, {
+    success: true,
+    message: "Transaction finalized",
+  });
   return {
     success: Boolean(parsed.success ?? true),
-    message: String(parsed.message ?? "OK"),
+    message: String(parsed.message ?? "Transaction finalized"),
     data: parsed.data,
   };
 }
 
+async function finalizedRegistryWrite(
+  functionName: string,
+  args: unknown[]
+): Promise<ContractWriteResult> {
+  if (!GNS_CONTRACT_ADDRESS) {
+    throw new Error("NEXT_PUBLIC_GNS_CONTRACT_ADDRESS is not configured.");
+  }
+  const raw = await writeMethodAt(
+    GNS_CONTRACT_ADDRESS,
+    functionName,
+    args,
+    undefined,
+    {
+      waitStatus: "FINALIZED",
+      strictWait: true,
+      retries: 160,
+      interval: 3000,
+    }
+  );
+  return asWriteResult(raw);
+}
+
 export { isConfigured };
 
+export type ArcPaymentConfig = {
+  chain_id: number;
+  rpc_url: string;
+  router: string;
+  event_topic: string;
+  deterministic_finality: boolean;
+  reservation_ttl_seconds: number;
+  renewal_intent_ttl_seconds: number;
+  registrations_paused: boolean;
+};
+
+export type RegistrationReservation = {
+  namespace: string;
+  reserver: string;
+  years: number;
+  primary_address: string;
+  created_at: number;
+  expires_at: number;
+  intent_hash: string;
+};
+
+export type RenewalIntent = {
+  namespace: string;
+  owner: string;
+  years: number;
+  current_expiry: number;
+  created_at: number;
+  expires_at: number;
+  intent_hash: string;
+};
+
 export async function isAvailable(name: string): Promise<boolean> {
-  const v = await readView<boolean>("is_available", [normaliseName(name)]);
-  return Boolean(v);
+  return Boolean(await readView<boolean>("is_available", [normaliseName(name)]));
 }
 
 export async function resolveName(name: string): Promise<GnsName | null> {
   const raw = await readView<string>("resolve", [normaliseName(name)]);
-  const parsed = parseJson<GnsName | Record<string, never>>(raw, {} as Record<string, never>);
-  if (!parsed || !(parsed as GnsName).full_name) return null;
-  return parsed as GnsName;
+  const parsed = parseJson<GnsName | Record<string, never>>(
+    raw,
+    {} as Record<string, never>
+  );
+  return parsed && (parsed as GnsName).full_name ? (parsed as GnsName) : null;
 }
 
 export async function searchName(query: string): Promise<SearchResult> {
   const fullName = normaliseName(query);
-  if (!fullName)
-    return { query, fullName, available: false, name: null };
-  const name = await resolveName(fullName);
-  if (name) {
-    return { query, fullName, available: false, name };
-  }
-  return { query, fullName, available: true, name: null };
+  if (!fullName) return { query, fullName, available: false, name: null };
+  const [available, name] = await Promise.all([
+    isAvailable(fullName),
+    resolveName(fullName),
+  ]);
+  return {
+    query,
+    fullName,
+    available,
+    name: available ? null : name,
+  };
 }
 
 export async function resolveAddress(name: string): Promise<string> {
-  const v = await readView<string>("resolve_address", [normaliseName(name)]);
-  return String(v || "");
+  return String(
+    (await readView<string>("resolve_address", [normaliseName(name)])) || ""
+  );
 }
 
 export async function reverseLookup(address: string): Promise<string> {
-  const v = await readView<string>("reverse_lookup", [address.toLowerCase()]);
-  return String(v || "");
+  return String(
+    (await readView<string>("reverse_lookup", [address.toLowerCase()])) || ""
+  );
 }
 
 export async function getNamesByOwner(owner: string): Promise<string[]> {
-  const raw = await readView<string>("get_names_by_owner", [owner.toLowerCase()]);
-  return parseJson<string[]>(raw, []);
+  return parseJson<string[]>(
+    await readView<string>("get_names_by_owner", [owner.toLowerCase()]),
+    []
+  );
 }
 
 export async function getSubnames(parentName: string): Promise<string[]> {
-  const raw = await readView<string>("get_subnames", [normaliseName(parentName)]);
-  return parseJson<string[]>(raw, []);
+  return parseJson<string[]>(
+    await readView<string>("get_subnames", [normaliseName(parentName)]),
+    []
+  );
 }
 
 export async function getRecords(name: string): Promise<GnsRecords> {
-  const raw = await readView<string>("get_records", [normaliseName(name)]);
-  return parseJson<GnsRecords>(raw, {});
+  return parseJson<GnsRecords>(
+    await readView<string>("get_records", [normaliseName(name)]),
+    {}
+  );
 }
 
 export async function getTotalNames(): Promise<number> {
   try {
-    const v = await readView<number | string>("get_total_names", []);
-    return Number(v) || 0;
+    return Number(await readView<number | string>("get_total_names", [])) || 0;
   } catch {
     return 0;
   }
@@ -97,302 +170,206 @@ export async function getTotalNames(): Promise<number> {
 
 export async function getTotalReports(): Promise<number> {
   try {
-    const v = await readView<number | string>("get_total_reports", []);
-    return Number(v) || 0;
+    return Number(await readView<number | string>("get_total_reports", [])) || 0;
   } catch {
     return 0;
   }
 }
 
 export async function getReport(id: string): Promise<GnsReport | null> {
-  const raw = await readView<string>("get_report", [id]);
-  const parsed = parseJson<GnsReport | Record<string, never>>(raw, {} as Record<string, never>);
-  if (!parsed || !(parsed as GnsReport).id) return null;
-  return parsed as GnsReport;
-}
-
-export const GEN_DECIMALS = 18n;
-export const ONE_GEN_WEI = 10n ** GEN_DECIMALS;
-
-function toBigInt(v: unknown): bigint {
-  if (typeof v === "bigint") return v;
-  if (typeof v === "number") return BigInt(Math.floor(v));
-  if (typeof v === "string") {
-    const trimmed = v.trim();
-    if (!trimmed) return 0n;
-    try {
-      return BigInt(trimmed);
-    } catch {
-      return 0n;
-    }
-  }
-  return 0n;
-}
-
-export function weiToGen(wei: bigint): string {
-  if (wei === 0n) return "0";
-  const whole = wei / ONE_GEN_WEI;
-  const remainder = wei % ONE_GEN_WEI;
-  if (remainder === 0n) return whole.toString();
-  const frac = remainder.toString().padStart(18, "0").replace(/0+$/, "").slice(0, 4);
-  return frac ? `${whole}.${frac}` : whole.toString();
-}
-
-export function genToWei(amount: string | number): bigint {
-  const s = String(amount).trim();
-  if (!s) return 0n;
-  const [whole, frac = ""] = s.split(".");
-  const fracPadded = (frac + "0".repeat(18)).slice(0, 18);
-  return BigInt(whole || "0") * ONE_GEN_WEI + BigInt(fracPadded || "0");
-}
-
-export async function getPricePerYear(): Promise<bigint> {
-  const v = await readView<unknown>("get_price_per_year", []);
-  return toBigInt(v);
-}
-
-export async function quoteRegistration(years: number): Promise<bigint> {
-  try {
-    const v = await readView<unknown>("quote_registration", [years]);
-    return toBigInt(v);
-  } catch {
-    const ppy = await getPricePerYear();
-    return ppy * BigInt(years);
-  }
-}
-
-export async function quoteRenewal(years: number): Promise<bigint> {
-  try {
-    const v = await readView<unknown>("quote_renewal", [years]);
-    return toBigInt(v);
-  } catch {
-    const ppy = await getPricePerYear();
-    return ppy * BigInt(years);
-  }
-}
-
-export async function getTreasury(): Promise<string> {
-  try {
-    const v = await readView<string>("get_treasury", []);
-    return String(v || "");
-  } catch {
-    return "";
-  }
+  const parsed = parseJson<GnsReport | Record<string, never>>(
+    await readView<string>("get_report", [id]),
+    {} as Record<string, never>
+  );
+  return parsed && (parsed as GnsReport).id ? (parsed as GnsReport) : null;
 }
 
 export async function getAdmin(): Promise<string> {
-  try {
-    const v = await readView<string>("get_admin", []);
-    return String(v || "");
-  } catch {
-    return "";
-  }
+  return String((await readView<string>("get_admin", [])) || "");
 }
 
-export async function getContractBalance(): Promise<bigint> {
-  try {
-    const v = await readView<unknown>("get_contract_balance", []);
-    return toBigInt(v);
-  } catch {
-    return 0n;
-  }
+export async function getPendingAdmin(): Promise<string> {
+  return String((await readView<string>("get_pending_admin", [])) || "");
 }
 
-export async function getTotalProtocolRevenue(): Promise<bigint> {
-  try {
-    const v = await readView<unknown>("get_total_protocol_revenue", []);
-    return toBigInt(v);
-  } catch {
-    return 0n;
-  }
+export async function getArcPaymentConfig(): Promise<ArcPaymentConfig> {
+  return parseJson<ArcPaymentConfig>(
+    await readView<string>("get_arc_payment_config", []),
+    {
+      chain_id: 0,
+      rpc_url: "",
+      router: "",
+      event_topic: "",
+      deterministic_finality: false,
+      reservation_ttl_seconds: 0,
+      renewal_intent_ttl_seconds: 0,
+      registrations_paused: false,
+    }
+  );
 }
 
-export async function getTotalWithdrawn(): Promise<bigint> {
-  try {
-    const v = await readView<unknown>("get_total_withdrawn", []);
-    return toBigInt(v);
-  } catch {
-    return 0n;
-  }
+export async function getRegistrationReservation(
+  name: string
+): Promise<RegistrationReservation | null> {
+  const parsed = parseJson<RegistrationReservation | Record<string, never>>(
+    await readView<string>("get_registration_reservation", [normaliseName(name)]),
+    {} as Record<string, never>
+  );
+  return parsed && (parsed as RegistrationReservation).namespace
+    ? (parsed as RegistrationReservation)
+    : null;
 }
 
-export async function registerName(
+export async function getTotalPaymentsConsumed(): Promise<number> {
+  return (
+    Number(await readView<number | string>("get_total_payments_consumed", [])) || 0
+  );
+}
+
+export async function isPaymentConsumed(
+  txHash: string,
+  logIndex: number
+): Promise<boolean> {
+  return Boolean(
+    await readView<boolean>("is_payment_consumed", [txHash, logIndex])
+  );
+}
+
+export async function reserveRegistration(
   name: string,
   years: number,
   primaryAddress: string
 ): Promise<ContractWriteResult> {
   const label = normaliseName(name).replace(/\.gen$/, "");
-  const value = await quoteRegistration(years);
-  const raw = await writeMethod("register", [label, years, primaryAddress], value);
-  return asWriteResult(raw);
+  return finalizedRegistryWrite("reserve_registration", [
+    label,
+    years,
+    primaryAddress,
+  ]);
 }
 
-export async function renewName(name: string, years: number): Promise<ContractWriteResult> {
-  const value = await quoteRenewal(years);
-  const raw = await writeMethod("renew", [normaliseName(name), years], value);
-  return asWriteResult(raw);
+export async function cancelRegistrationReservation(
+  name: string
+): Promise<ContractWriteResult> {
+  return finalizedRegistryWrite("cancel_registration_reservation", [
+    normaliseName(name),
+  ]);
 }
 
-export async function adminWithdraw(amountWei: bigint): Promise<ContractWriteResult> {
-  const raw = await writeMethod("admin_withdraw", [amountWei.toString()]);
-  return asWriteResult(raw);
+export async function createRenewalIntent(name: string, years: number): Promise<ContractWriteResult> {
+  return finalizedRegistryWrite("create_renewal_intent", [normaliseName(name), years]);
 }
 
-export async function adminSetPricePerYear(newPriceWei: bigint): Promise<ContractWriteResult> {
-  const raw = await writeMethod("admin_set_price_per_year", [newPriceWei.toString()]);
-  return asWriteResult(raw);
+export async function getRenewalIntent(name: string): Promise<RenewalIntent | null> {
+  const parsed = parseJson<RenewalIntent | Record<string, never>>(
+    await readView<string>("get_renewal_intent", [normaliseName(name)]),
+    {} as Record<string, never>
+  );
+  return parsed && (parsed as RenewalIntent).intent_hash
+    ? (parsed as RenewalIntent)
+    : null;
 }
 
-export async function adminSetTreasury(newTreasury: string): Promise<ContractWriteResult> {
-  const raw = await writeMethod("admin_set_treasury", [newTreasury]);
-  return asWriteResult(raw);
+export async function registerName(
+  name: string,
+  years: number,
+  primaryAddress: string,
+  arcTxHash: string,
+  arcLogIndex: number
+): Promise<ContractWriteResult> {
+  const label = normaliseName(name).replace(/\.gen$/, "");
+  return finalizedRegistryWrite("register", [
+    label,
+    years,
+    primaryAddress,
+    arcTxHash,
+    arcLogIndex,
+  ]);
 }
 
-export async function transferName(
+export async function renewName(
+  name: string,
+  years: number,
+  arcTxHash: string,
+  arcLogIndex: number
+): Promise<ContractWriteResult> {
+  return finalizedRegistryWrite("renew", [
+    normaliseName(name),
+    years,
+    arcTxHash,
+    arcLogIndex,
+  ]);
+}
+
+export function transferName(
   name: string,
   newOwner: string
 ): Promise<ContractWriteResult> {
-  const raw = await writeMethod("transfer", [normaliseName(name), newOwner]);
-  return asWriteResult(raw);
+  return finalizedRegistryWrite("transfer", [normaliseName(name), newOwner]);
 }
 
-export async function setRecords(
+export function setRecords(
   name: string,
   records: GnsRecords
 ): Promise<ContractWriteResult> {
-  const raw = await writeMethod("set_records", [normaliseName(name), JSON.stringify(records)]);
-  return asWriteResult(raw);
+  return finalizedRegistryWrite("set_records", [
+    normaliseName(name),
+    JSON.stringify(records),
+  ]);
 }
 
-export async function setPrimaryAddress(
+export function setPrimaryAddress(
   name: string,
   address: string
 ): Promise<ContractWriteResult> {
-  const raw = await writeMethod("set_primary_address", [normaliseName(name), address]);
-  return asWriteResult(raw);
+  return finalizedRegistryWrite("set_primary_address", [normaliseName(name), address]);
 }
 
-export async function setPrimaryName(name: string): Promise<ContractWriteResult> {
-  const raw = await writeMethod("set_primary_name", [normaliseName(name)]);
-  return asWriteResult(raw);
+export function setPrimaryName(name: string): Promise<ContractWriteResult> {
+  return finalizedRegistryWrite("set_primary_name", [normaliseName(name)]);
 }
 
-export async function createSubname(
+export function createSubname(
   parent: string,
   subLabel: string,
   primaryAddress: string
 ): Promise<ContractWriteResult> {
-  const raw = await writeMethod("create_subname", [
+  return finalizedRegistryWrite("create_subname", [
     normaliseName(parent),
     subLabel,
     primaryAddress,
   ]);
-  return asWriteResult(raw);
 }
 
-export async function reportName(
-  name: string,
-  reason: string,
-  evidenceUrl: string,
-  comment: string
+export function transferSubname(
+  subname: string,
+  newOwner: string
 ): Promise<ContractWriteResult> {
-  const raw = await writeMethod("report_name", [
-    normaliseName(name),
-    reason,
-    evidenceUrl,
-    comment,
-  ]);
-  return asWriteResult(raw);
+  return finalizedRegistryWrite("transfer_subname", [normaliseName(subname), newOwner]);
 }
-
-// ---------------------------------------------------------------------------
-// AI layer (Equivalence Principle, beta — labelled AI-assisted, not official)
-// ---------------------------------------------------------------------------
 
 export async function getTotalReviews(): Promise<number> {
   try {
-    const v = await readView<number | string>("get_total_reviews", []);
-    return Number(v) || 0;
+    return Number(await readView<number | string>("get_total_reviews", [])) || 0;
   } catch {
     return 0;
   }
 }
 
-export async function getAiReview(reviewId: string): Promise<AiReview | null> {
+export async function getAiReview(
+  reviewId: string
+): Promise<AiReview | null> {
   if (!reviewId) return null;
-  const raw = await readView<string>("get_ai_review", [reviewId]);
-  const parsed = parseJson<AiReview | Record<string, never>>(raw, {} as Record<string, never>);
-  if (!parsed || !(parsed as AiReview).id) return null;
-  return parsed as AiReview;
-}
-
-export async function getAiStatus(name: string): Promise<{ risk: string; verified: boolean; last_review_id: string } | null> {
-  try {
-    const raw = await readView<string>("get_ai_status", [normaliseName(name)]);
-    const parsed = parseJson<{ risk: string; verified: boolean; last_review_id: string } | Record<string, never>>(
-      raw,
-      {} as Record<string, never>
-    );
-    if (!parsed || !("risk" in parsed)) return null;
-    return parsed as { risk: string; verified: boolean; last_review_id: string };
-  } catch {
-    return null;
-  }
+  const parsed = parseJson<AiReview | Record<string, never>>(
+    await readView<string>("get_ai_review", [reviewId]),
+    {} as Record<string, never>
+  );
+  return parsed && (parsed as AiReview).id ? (parsed as AiReview) : null;
 }
 
 async function fetchLatestReview(): Promise<AiReview | null> {
   const total = await getTotalReviews();
-  if (!total) return null;
-  return getAiReview(String(total));
-}
-
-export async function aiReviewName(
-  name: string,
-  claim: string,
-  evidenceUrl: string,
-  extraContext: string
-): Promise<AiReview | null> {
-  await writeMethod("ai_review_name", [normaliseName(name), claim, evidenceUrl, extraContext]);
-  const status = await getAiStatus(name);
-  if (status?.last_review_id) {
-    const review = await getAiReview(status.last_review_id);
-    if (review) return review;
-  }
-  return fetchLatestReview();
-}
-
-export async function aiReviewReport(reportId: string): Promise<AiReview | null> {
-  await writeMethod("ai_review_report", [reportId]);
-  const report = await getReport(reportId);
-  if (report?.ai_review_id) {
-    const review = await getAiReview(report.ai_review_id);
-    if (review) return review;
-  }
-  return fetchLatestReview();
-}
-
-export async function aiVerifyProjectClaim(
-  name: string,
-  projectName: string,
-  officialWebsite: string,
-  officialX: string,
-  officialGithub: string,
-  explanation: string
-): Promise<AiReview | null> {
-  await writeMethod("ai_verify_project_claim", [
-    normaliseName(name),
-    projectName,
-    officialWebsite,
-    officialX,
-    officialGithub,
-    explanation,
-  ]);
-  const status = await getAiStatus(name);
-  if (status?.last_review_id) {
-    const review = await getAiReview(status.last_review_id);
-    if (review) return review;
-  }
-  return fetchLatestReview();
+  return total ? getAiReview(String(total)) : null;
 }
 
 export async function aiSuggestNames(
@@ -401,38 +378,48 @@ export async function aiSuggestNames(
 ): Promise<AiSuggestion[]> {
   await writeMethod("ai_suggest_names", [baseLabel, purpose]);
   const review = await fetchLatestReview();
-  const result = review?.result as unknown as { suggestions?: AiSuggestion[] } | undefined;
-  if (result?.suggestions && Array.isArray(result.suggestions)) {
-    return result.suggestions;
-  }
-  return [];
+  const result = review?.result as unknown as
+    | { suggestions?: AiSuggestion[] }
+    | undefined;
+  return result?.suggestions && Array.isArray(result.suggestions)
+    ? result.suggestions
+    : [];
 }
 
-export function extractResult(review: AiReview | null): AiResult | null {
-  if (!review) return null;
-  return review.result || null;
+export function adminSetRegistrationsPaused(
+  paused: boolean
+): Promise<ContractWriteResult> {
+  return finalizedRegistryWrite("admin_set_registrations_paused", [paused]);
 }
 
-// ---------------------------------------------------------------------------
-// Admin methods (only effective for the contract admin address)
-// ---------------------------------------------------------------------------
-
-export async function adminFlagName(name: string, reason: string): Promise<ContractWriteResult> {
-  const raw = await writeMethod("admin_flag_name", [normaliseName(name), reason]);
-  return asWriteResult(raw);
+export function adminProposeAdmin(
+  newAdmin: string
+): Promise<ContractWriteResult> {
+  return finalizedRegistryWrite("admin_propose_admin", [newAdmin]);
 }
 
-export async function adminUnflagName(name: string): Promise<ContractWriteResult> {
-  const raw = await writeMethod("admin_unflag_name", [normaliseName(name)]);
-  return asWriteResult(raw);
+export function adminCancelAdminTransfer(): Promise<ContractWriteResult> {
+  return finalizedRegistryWrite("admin_cancel_admin_transfer", []);
 }
 
-export async function adminSetReportStatus(reportId: string, status: string): Promise<ContractWriteResult> {
-  const raw = await writeMethod("admin_set_report_status", [reportId, status]);
-  return asWriteResult(raw);
+export function acceptRegistryAdmin(): Promise<ContractWriteResult> {
+  return finalizedRegistryWrite("accept_admin", []);
 }
 
-export async function adminTransferAdmin(newAdmin: string): Promise<ContractWriteResult> {
-  const raw = await writeMethod("admin_transfer_admin", [newAdmin]);
-  return asWriteResult(raw);
+export function adminFlagName(
+  name: string,
+  reason: string
+): Promise<ContractWriteResult> {
+  return finalizedRegistryWrite("admin_flag_name", [normaliseName(name), reason]);
+}
+
+export function adminUnflagName(name: string): Promise<ContractWriteResult> {
+  return finalizedRegistryWrite("admin_unflag_name", [normaliseName(name)]);
+}
+
+export function adminSetReportStatus(
+  reportId: string,
+  status: string
+): Promise<ContractWriteResult> {
+  return finalizedRegistryWrite("admin_set_report_status", [reportId, status]);
 }

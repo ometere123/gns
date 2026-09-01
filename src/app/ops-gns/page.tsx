@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
-import { Textarea } from "@/components/ui/Textarea";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/Badge";
 import { AddressText } from "@/components/AddressText";
@@ -11,79 +10,83 @@ import { ConnectWalletButton } from "@/components/ConnectWalletButton";
 import { EmptyState, LoadingState } from "@/components/States";
 import { useWallet } from "@/lib/wallet/WalletProvider";
 import {
-  adminFlagName,
-  adminUnflagName,
-  adminSetReportStatus,
-  adminTransferAdmin,
-  adminWithdraw,
-  adminSetPricePerYear,
-  adminSetTreasury,
+  acceptRegistryAdmin,
+  adminCancelAdminTransfer,
+  adminProposeAdmin,
+  adminSetRegistrationsPaused,
   getAdmin,
-  getTreasury,
-  getPricePerYear,
-  getContractBalance,
-  getTotalProtocolRevenue,
-  getTotalWithdrawn,
+  getArcPaymentConfig,
+  getPendingAdmin,
   getTotalNames,
-  getTotalReports,
-  weiToGen,
-  genToWei,
+  getTotalPaymentsConsumed,
 } from "@/lib/gns/contract";
+import {
+  arcAcceptAdmin,
+  arcAcceptTreasury,
+  arcCancelAdminTransfer,
+  arcCancelTreasuryTransfer,
+  arcProposeAdmin,
+  arcProposeTreasury,
+  arcSetPaused,
+  arcSetPrices,
+  arcWithdraw,
+  arcWithdrawAll,
+  formatUsdc,
+  readArcRouterOverview,
+  usdcToBaseUnits,
+  type ArcRouterOverview,
+} from "@/lib/arc/client";
 
-const STATUSES = ["open", "reviewed", "flagged", "dismissed"];
-
-type Overview = {
+type RegistryOverview = {
   admin: string;
-  treasury: string;
-  pricePerYearWei: bigint;
-  balanceWei: bigint;
-  revenueWei: bigint;
-  withdrawnWei: bigint;
+  pendingAdmin: string;
+  paused: boolean;
+  router: string;
   totalNames: number;
-  totalReports: number;
+  paymentsConsumed: number;
 };
 
-export default function OpsGnsPage() {
-  const { address } = useWallet();
-  const [overview, setOverview] = useState<Overview | null>(null);
-  const [loading, setLoading] = useState(true);
+const same = (a?: string | null, b?: string | null) => Boolean(a && b && a.toLowerCase() === b.toLowerCase());
 
-  // forms
-  const [priceGen, setPriceGen] = useState("");
-  const [treasuryInput, setTreasuryInput] = useState("");
-  const [withdrawGen, setWithdrawGen] = useState("");
-  const [flagName, setFlagName] = useState("");
-  const [flagReason, setFlagReason] = useState("");
-  const [unflag, setUnflag] = useState("");
-  const [reportId, setReportId] = useState("");
-  const [reportStatus, setReportStatus] = useState(STATUSES[1]);
-  const [newAdmin, setNewAdmin] = useState("");
+export default function OpsGnsPage() {
+  const { address, switchToGenLayer } = useWallet();
+  const [registry, setRegistry] = useState<RegistryOverview | null>(null);
+  const [arc, setArc] = useState<ArcRouterOverview | null>(null);
+  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+
+  const [registryAdminInput, setRegistryAdminInput] = useState("");
+  const [arcAdminInput, setArcAdminInput] = useState("");
+  const [treasuryInput, setTreasuryInput] = useState("");
+  const [registrationPrice, setRegistrationPrice] = useState("");
+  const [renewalPrice, setRenewalPrice] = useState("");
+  const [withdrawAmount, setWithdrawAmount] = useState("");
 
   const load = async () => {
     setLoading(true);
     try {
-      const [admin, treasury, ppy, bal, rev, wd, names, reports] = await Promise.all([
+      const [admin, pendingAdmin, config, names, consumed, arcOverview] = await Promise.all([
         getAdmin(),
-        getTreasury(),
-        getPricePerYear(),
-        getContractBalance(),
-        getTotalProtocolRevenue(),
-        getTotalWithdrawn(),
+        getPendingAdmin(),
+        getArcPaymentConfig(),
         getTotalNames(),
-        getTotalReports(),
+        getTotalPaymentsConsumed(),
+        readArcRouterOverview(),
       ]);
-      setOverview({
+      setRegistry({
         admin,
-        treasury,
-        pricePerYearWei: ppy,
-        balanceWei: bal,
-        revenueWei: rev,
-        withdrawnWei: wd,
+        pendingAdmin,
+        paused: config.registrations_paused,
+        router: config.router,
         totalNames: names,
-        totalReports: reports,
+        paymentsConsumed: consumed,
       });
+      setArc(arcOverview);
+      setRegistrationPrice(formatUsdc(arcOverview.registrationPricePerYear));
+      setRenewalPrice(formatUsdc(arcOverview.renewalPricePerYear));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Protocol overview unavailable.");
     } finally {
       setLoading(false);
     }
@@ -93,223 +96,252 @@ export default function OpsGnsPage() {
     load();
   }, []);
 
-  if (!address) {
-    return (
-      <EmptyState
-        title="Admin only"
-        description="Connect the admin wallet to view protocol controls."
-        action={<ConnectWalletButton />}
-      />
-    );
-  }
-
-  if (loading || !overview) return <LoadingState message="Loading protocol overview…" />;
-
-  const isAdmin = overview.admin && address.toLowerCase() === overview.admin.toLowerCase();
-
-  if (!isAdmin) {
-    return (
-      <EmptyState
-        title="Access denied"
-        description={`Connected wallet does not match the on-chain admin (${overview.admin}). Contract writes will reject anyway.`}
-      />
-    );
-  }
-
-  const wrap = async (key: string, fn: () => Promise<{ message: string }>) => {
+  const run = async (key: string, fn: () => Promise<unknown>) => {
     setBusy(key);
     setMessage(null);
     try {
-      const r = await fn();
-      setMessage(r.message);
+      await fn();
+      setMessage("Transaction finalized successfully.");
       await load();
-    } catch (e) {
-      setMessage(e instanceof Error ? e.message : "Failed.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Transaction failed.");
     } finally {
       setBusy(null);
     }
   };
 
+  const runRegistry = (key: string, fn: () => Promise<unknown>) =>
+    run(key, async () => {
+      await switchToGenLayer();
+      return fn();
+    });
+
+  if (!address) {
+    return (
+      <EmptyState
+        title="Protocol operations"
+        description="Connect a protocol admin or treasury wallet to use operational controls."
+        action={<ConnectWalletButton />}
+      />
+    );
+  }
+
+  if (loading && (!registry || !arc)) return <LoadingState message="Loading GenLayer and Arc protocol state…" />;
+  if (!registry || !arc) return <EmptyState title="Configuration unavailable" description={message || "Could not load protocol state."} />;
+
+  const isRegistryAdmin = same(address, registry.admin);
+  const isPendingRegistryAdmin = same(address, registry.pendingAdmin);
+  const isArcAdmin = same(address, arc.admin);
+  const isPendingArcAdmin = same(address, arc.pendingAdmin);
+  const isTreasury = same(address, arc.treasury);
+  const isPendingTreasury = same(address, arc.pendingTreasury);
+  const hasRole = isRegistryAdmin || isPendingRegistryAdmin || isArcAdmin || isPendingArcAdmin || isTreasury || isPendingTreasury;
+
+  if (!hasRole) {
+    return (
+      <EmptyState
+        title="Access denied"
+        description="The connected wallet is not the current or pending GenLayer admin, Arc admin, or Arc treasury. Contract-level permissions remain the source of truth."
+      />
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div>
-        <Badge tone="amber">Admin</Badge>
-        <h1 className="mt-3 text-3xl font-semibold text-ink">Protocol controls</h1>
-        <p className="mt-1 text-sm text-muted">
-          Registration fees are paid to the GNS contract and can be withdrawn by the
-          protocol admin to the treasury address.
+        <Badge tone="amber">Protocol operations</Badge>
+        <h1 className="mt-3 text-3xl font-semibold text-ink">GNS controls</h1>
+        <p className="mt-1 max-w-3xl text-sm text-muted">
+          Namespace administration stays on GenLayer. USDC pricing, custody and withdrawals stay on Arc. Admin and treasury are separate roles and both use two-step handover.
         </p>
       </div>
 
-      <Card padding="lg">
-        <h2 className="font-semibold text-ink">Protocol overview</h2>
-        <dl className="mt-4 grid grid-cols-1 gap-x-8 gap-y-3 text-sm sm:grid-cols-2">
-          <Row k="Admin"><AddressText value={overview.admin} /></Row>
-          <Row k="Treasury"><AddressText value={overview.treasury} /></Row>
-          <Row k="Price per year">{weiToGen(overview.pricePerYearWei)} GEN</Row>
-          <Row k="Contract balance">{weiToGen(overview.balanceWei)} GEN</Row>
-          <Row k="Total protocol revenue">{weiToGen(overview.revenueWei)} GEN</Row>
-          <Row k="Total withdrawn">{weiToGen(overview.withdrawnWei)} GEN</Row>
-          <Row k="Total names">{overview.totalNames}</Row>
-          <Row k="Total reports">{overview.totalReports}</Row>
-        </dl>
-      </Card>
-
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card padding="lg" className="space-y-3">
-          <h2 className="font-semibold text-ink">Set price per year</h2>
-          <p className="text-xs text-muted">Current: {weiToGen(overview.pricePerYearWei)} GEN</p>
-          <Input
-            label="New price (GEN)"
-            value={priceGen}
-            onChange={(e) => setPriceGen(e.target.value)}
-            placeholder="5"
-          />
-          <Button
-            onClick={() => wrap("price", () => adminSetPricePerYear(genToWei(priceGen)))}
-            loading={busy === "price"}
-            disabled={!priceGen}
-          >
-            Update price
-          </Button>
-        </Card>
-
-        <Card padding="lg" className="space-y-3">
-          <h2 className="font-semibold text-ink">Set treasury</h2>
-          <p className="text-xs text-muted">All withdrawals go to this address.</p>
-          <Input
-            label="Treasury address"
-            value={treasuryInput}
-            onChange={(e) => setTreasuryInput(e.target.value)}
-            placeholder="0x…"
-          />
-          <Button
-            onClick={() => wrap("treasury", () => adminSetTreasury(treasuryInput))}
-            loading={busy === "treasury"}
-            disabled={!treasuryInput}
-          >
-            Update treasury
-          </Button>
-        </Card>
-
-        <Card padding="lg" className="space-y-3">
-          <h2 className="font-semibold text-ink">Withdraw</h2>
-          <p className="text-xs text-muted">
-            Available: {weiToGen(overview.balanceWei)} GEN. Funds are sent to the treasury address.
-          </p>
-          <Input
-            label="Amount (GEN)"
-            value={withdrawGen}
-            onChange={(e) => setWithdrawGen(e.target.value)}
-            placeholder="1"
-          />
-          <Button
-            onClick={() => wrap("withdraw", () => adminWithdraw(genToWei(withdrawGen)))}
-            loading={busy === "withdraw"}
-            disabled={!withdrawGen}
-          >
-            Withdraw to treasury
-          </Button>
-        </Card>
-
-        <Card padding="lg" className="space-y-3">
-          <h2 className="font-semibold text-ink">Transfer admin</h2>
-          <Input
-            label="New admin address"
-            value={newAdmin}
-            onChange={(e) => setNewAdmin(e.target.value)}
-            placeholder="0x…"
-          />
-          <Button
-            variant="danger"
-            onClick={() => wrap("xfer", () => adminTransferAdmin(newAdmin))}
-            loading={busy === "xfer"}
-            disabled={!newAdmin}
-          >
-            Transfer admin
-          </Button>
-        </Card>
-
-        <Card padding="lg" className="space-y-3">
-          <h2 className="font-semibold text-ink">Flag a name</h2>
-          <Input
-            label="Name"
-            value={flagName}
-            onChange={(e) => setFlagName(e.target.value.toLowerCase())}
-            placeholder="example.gen"
-          />
-          <Textarea
-            label="Reason"
-            value={flagReason}
-            onChange={(e) => setFlagReason(e.target.value)}
-            placeholder="Why this name is being flagged."
-          />
-          <Button
-            onClick={() => wrap("flag", () => adminFlagName(flagName, flagReason))}
-            loading={busy === "flag"}
-            disabled={!flagName}
-          >
-            Flag name
-          </Button>
-        </Card>
-
-        <Card padding="lg" className="space-y-3">
-          <h2 className="font-semibold text-ink">Unflag a name</h2>
-          <Input
-            label="Name"
-            value={unflag}
-            onChange={(e) => setUnflag(e.target.value.toLowerCase())}
-            placeholder="example.gen"
-          />
-          <Button
-            onClick={() => wrap("unflag", () => adminUnflagName(unflag))}
-            loading={busy === "unflag"}
-            disabled={!unflag}
-          >
-            Unflag name
-          </Button>
-        </Card>
-
-        <Card padding="lg" className="space-y-3">
-          <h2 className="font-semibold text-ink">Set report status</h2>
-          <Input
-            label="Report ID"
-            value={reportId}
-            onChange={(e) => setReportId(e.target.value)}
-            placeholder="1"
-          />
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-ink">Status</label>
-            <select
-              value={reportStatus}
-              onChange={(e) => setReportStatus(e.target.value)}
-              className="h-11 w-full rounded-lg border border-borderGrey bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
-            >
-              {STATUSES.map((s) => (
-                <option key={s}>{s}</option>
-              ))}
-            </select>
+        <Card padding="lg">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-muted">GenLayer registry</p>
+              <h2 className="mt-1 text-xl font-semibold text-ink">Namespace control</h2>
+            </div>
+            <Badge tone={registry.paused ? "amber" : "green"}>{registry.paused ? "Paused" : "Active"}</Badge>
           </div>
-          <Button
-            onClick={() => wrap("status", () => adminSetReportStatus(reportId, reportStatus))}
-            loading={busy === "status"}
-            disabled={!reportId}
-          >
-            Update status
-          </Button>
+          <dl className="mt-4 space-y-3 text-sm">
+            <Row label="Admin"><AddressText value={registry.admin} /></Row>
+            <Row label="Pending admin"><AddressText value={registry.pendingAdmin || "0x0000000000000000000000000000000000000000"} /></Row>
+            <Row label="Arc router"><AddressText value={registry.router} /></Row>
+            <Row label="Names">{registry.totalNames}</Row>
+            <Row label="Arc receipts consumed">{registry.paymentsConsumed}</Row>
+          </dl>
+        </Card>
+
+        <Card padding="lg">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-muted">Arc payment router</p>
+              <h2 className="mt-1 text-xl font-semibold text-ink">USDC treasury</h2>
+            </div>
+            <Badge tone={arc.paused ? "amber" : "green"}>{arc.paused ? "Paused" : "Active"}</Badge>
+          </div>
+          <dl className="mt-4 space-y-3 text-sm">
+            <Row label="Admin"><AddressText value={arc.admin} /></Row>
+            <Row label="Treasury"><AddressText value={arc.treasury} /></Row>
+            <Row label="Registration / year">{formatUsdc(arc.registrationPricePerYear)} USDC</Row>
+            <Row label="Renewal / year">{formatUsdc(arc.renewalPricePerYear)} USDC</Row>
+            <Row label="Router balance">{formatUsdc(arc.treasuryBalance)} USDC</Row>
+            <Row label="Total collected">{formatUsdc(arc.totalCollected)} USDC</Row>
+            <Row label="Total withdrawn">{formatUsdc(arc.totalWithdrawn)} USDC</Row>
+          </dl>
         </Card>
       </div>
+
+      {(isRegistryAdmin || isPendingRegistryAdmin) && (
+        <Card padding="lg" className="space-y-4">
+          <div>
+            <h2 className="font-semibold text-ink">GenLayer registry administration</h2>
+            <p className="mt-1 text-xs text-muted">These controls cannot withdraw USDC or manufacture authenticity verdicts.</p>
+          </div>
+
+          {isRegistryAdmin && (
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-ink">Registration pause</p>
+                <Button
+                  onClick={() => runRegistry("registry-pause", () => adminSetRegistrationsPaused(!registry.paused))}
+                  loading={busy === "registry-pause"}
+                >
+                  {registry.paused ? "Resume registrations" : "Pause registrations"}
+                </Button>
+              </div>
+              <div className="space-y-2">
+                <Input label="Propose new GenLayer admin" value={registryAdminInput} onChange={(e) => setRegistryAdminInput(e.target.value)} placeholder="0x…" />
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    onClick={() => runRegistry("registry-admin", () => adminProposeAdmin(registryAdminInput))}
+                    loading={busy === "registry-admin"}
+                    disabled={!registryAdminInput}
+                  >
+                    Propose admin
+                  </Button>
+                  {registry.pendingAdmin && (
+                    <Button variant="ghost" onClick={() => runRegistry("registry-cancel", adminCancelAdminTransfer)} loading={busy === "registry-cancel"}>
+                      Cancel proposal
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {isPendingRegistryAdmin && (
+            <Button onClick={() => runRegistry("registry-accept", acceptRegistryAdmin)} loading={busy === "registry-accept"}>
+              Accept GenLayer admin role
+            </Button>
+          )}
+        </Card>
+      )}
+
+      {(isArcAdmin || isPendingArcAdmin) && (
+        <Card padding="lg" className="space-y-5">
+          <div>
+            <h2 className="font-semibold text-ink">Arc router administration</h2>
+            <p className="mt-1 text-xs text-muted">Pricing and payment collection live here, independently from namespace ownership and authenticity judgment.</p>
+          </div>
+
+          {isArcAdmin && (
+            <div className="grid gap-5 md:grid-cols-2">
+              <div className="space-y-2">
+                <Input label="Registration price / year (USDC)" value={registrationPrice} onChange={(e) => setRegistrationPrice(e.target.value)} />
+                <Input label="Renewal price / year (USDC)" value={renewalPrice} onChange={(e) => setRenewalPrice(e.target.value)} />
+                <Button
+                  onClick={() => run("arc-price", () => arcSetPrices(address, usdcToBaseUnits(registrationPrice), usdcToBaseUnits(renewalPrice)))}
+                  loading={busy === "arc-price"}
+                >
+                  Update Arc prices
+                </Button>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-ink">Payment collection</p>
+                <Button onClick={() => run("arc-pause", () => arcSetPaused(address, !arc.paused))} loading={busy === "arc-pause"}>
+                  {arc.paused ? "Resume Arc payments" : "Pause Arc payments"}
+                </Button>
+              </div>
+
+              <div className="space-y-2">
+                <Input label="Propose new Arc admin" value={arcAdminInput} onChange={(e) => setArcAdminInput(e.target.value)} placeholder="0x…" />
+                <div className="flex flex-wrap gap-2">
+                  <Button onClick={() => run("arc-admin", () => arcProposeAdmin(address, arcAdminInput))} loading={busy === "arc-admin"} disabled={!arcAdminInput}>
+                    Propose admin
+                  </Button>
+                  {arc.pendingAdmin !== "0x0000000000000000000000000000000000000000" && (
+                    <Button variant="ghost" onClick={() => run("arc-admin-cancel", () => arcCancelAdminTransfer(address))} loading={busy === "arc-admin-cancel"}>
+                      Cancel
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Input label="Propose new treasury" value={treasuryInput} onChange={(e) => setTreasuryInput(e.target.value)} placeholder="0x…" />
+                <div className="flex flex-wrap gap-2">
+                  <Button onClick={() => run("arc-treasury", () => arcProposeTreasury(address, treasuryInput))} loading={busy === "arc-treasury"} disabled={!treasuryInput}>
+                    Propose treasury
+                  </Button>
+                  {arc.pendingTreasury !== "0x0000000000000000000000000000000000000000" && (
+                    <Button variant="ghost" onClick={() => run("arc-treasury-cancel", () => arcCancelTreasuryTransfer(address))} loading={busy === "arc-treasury-cancel"}>
+                      Cancel
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {isPendingArcAdmin && (
+            <Button onClick={() => run("arc-admin-accept", () => arcAcceptAdmin(address))} loading={busy === "arc-admin-accept"}>
+              Accept Arc admin role
+            </Button>
+          )}
+        </Card>
+      )}
+
+      {(isTreasury || isPendingTreasury) && (
+        <Card padding="lg" className="space-y-4">
+          <div>
+            <h2 className="font-semibold text-ink">Arc treasury</h2>
+            <p className="mt-1 text-xs text-muted">Only the configured treasury can withdraw collected USDC.</p>
+          </div>
+
+          {isPendingTreasury && !isTreasury && (
+            <Button onClick={() => run("treasury-accept", () => arcAcceptTreasury(address))} loading={busy === "treasury-accept"}>
+              Accept treasury role
+            </Button>
+          )}
+
+          {isTreasury && (
+            <div className="grid gap-4 md:grid-cols-[1fr_auto_auto] md:items-end">
+              <Input label="Withdraw amount (USDC)" value={withdrawAmount} onChange={(e) => setWithdrawAmount(e.target.value)} placeholder="100" />
+              <Button onClick={() => run("withdraw", () => arcWithdraw(address, usdcToBaseUnits(withdrawAmount)))} loading={busy === "withdraw"} disabled={!withdrawAmount}>
+                Withdraw
+              </Button>
+              <Button variant="secondary" onClick={() => run("withdraw-all", () => arcWithdrawAll(address))} loading={busy === "withdraw-all"} disabled={arc.treasuryBalance === 0n}>
+                Withdraw all
+              </Button>
+            </div>
+          )}
+        </Card>
+      )}
 
       {message && <p className="text-sm text-muted">{message}</p>}
     </div>
   );
 }
 
-function Row({ k, children }: { k: string; children: React.ReactNode }) {
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div>
-      <dt className="text-muted">{k}</dt>
-      <dd className="text-ink">{children}</dd>
+    <div className="flex flex-wrap items-start justify-between gap-3 border-b border-borderGrey/70 pb-2 last:border-0 last:pb-0">
+      <dt className="text-muted">{label}</dt>
+      <dd className="text-right text-ink">{children}</dd>
     </div>
   );
 }

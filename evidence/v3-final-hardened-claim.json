@@ -1,0 +1,12 @@
+{
+  "protocol": "gns-claim-v2",
+  "namespace": "gnsv3mtbqkki1.gen",
+  "wallet": "0x231ef01e282385ec2e22394469f1c8c6c28fd6b1",
+  "registry": "0xed29abf0670ea230a54de10e167c9de9417f2907",
+  "authenticity_contract": "0x4e841ac051a50429c315b83d6898d4d51dea5714",
+  "claim_id": "1",
+  "challenge": "4412a665398e4dcdca3e1603b3ebc85a7406f262",
+  "policy_version": "gns-auth-v2",
+  "issued_at": 1787848983,
+  "expires_at": 1788367383
+}
